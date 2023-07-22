@@ -53,8 +53,6 @@
  */
 void watchdogCallback(uintptr_t watchdogHandle)
 {
-    GPIO_write(CONFIG_GPIO_LED_0, CONFIG_GPIO_LED_ON);
-    sleep(1);
     Power_reset();
 }
 
@@ -63,14 +61,9 @@ void watchdogCallback(uintptr_t watchdogHandle)
  */
 void gpioButtonIsr0(uint_least8_t index)
 {
-//    GPIO_toggle(CONFIG_GPIO_LED_0);
-    GPIO_write(CONFIG_GPIO_LED_0, CONFIG_GPIO_LED_OFF);
+    GPIO_write(CONFIG_GPIO_LED_1, CONFIG_GPIO_LED_ON);
 
-    /*
-     * Simulate the application being stuck in an ISR. This ISR can be
-     * preempted by the watchdog Non-Maskable Interrupt (NMI).
-     */
-    while (1) {}
+    // while (1) {}
 }
 
 /*
@@ -78,14 +71,9 @@ void gpioButtonIsr0(uint_least8_t index)
  */
 void gpioButtonIsr1(uint_least8_t index)
 {
-//    GPIO_toggle(CONFIG_GPIO_LED_0);
-    GPIO_write(CONFIG_GPIO_LED_0, CONFIG_GPIO_LED_ON);
+    GPIO_write(CONFIG_GPIO_LED_1, CONFIG_GPIO_LED_OFF);
 
-    /*
-     * Simulate the application being stuck in an ISR. This ISR can be
-     * preempted by the watchdog Non-Maskable Interrupt (NMI).
-     */
-    while (1) {}
+    while (1) {} // this will trigger the watchdog
 }
 
 /*
