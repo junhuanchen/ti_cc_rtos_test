@@ -3,7 +3,8 @@
         {
             "name": "Linux",
             "includePath": [
-                "${workspaceFolder}/**"
+                "${workspaceFolder}/**",
+                "/home/junhuan/ti/simplelink_cc13xx_cc26xx_sdk_7_10_01_24/source"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",

@@ -71,32 +71,24 @@ void gpioButtonIsr0(uint_least8_t index)
  */
 void gpioButtonIsr1(uint_least8_t index)
 {
-    GPIO_write(CONFIG_GPIO_LED_1, CONFIG_GPIO_LED_OFF);
+    GPIO_write(CONFIG_GPIO_LED_1, CONFIG_GPIO_LED_ON);
 
-    while (1) {} // this will trigger the watchdog
+    // while (1) {} // this will trigger the watchdog
 }
 
-/*
- *  ======== mainThread ========
- */
-void *mainThread(void *arg0)
+struct _test_empty_
 {
+    /* data */
+} test_empty;
+
+void test_wdt_init()
+{
+
     Watchdog_Handle watchdogHandle;
     Watchdog_Params params;
     uint32_t reloadValue;
-
-    /* Call driver init functions */
-    GPIO_init();
+    
     Watchdog_init();
-
-    /* Configure the LED and button pins */
-    GPIO_setConfig(CONFIG_GPIO_LED_0, GPIO_CFG_OUT_STD | GPIO_CFG_OUT_LOW);
-    GPIO_setConfig(CONFIG_GPIO_LED_1, GPIO_CFG_OUT_STD | GPIO_CFG_OUT_LOW);
-    GPIO_setConfig(CONFIG_GPIO_BUTTON_0_INPUT, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_FALLING);
-    GPIO_setCallback(CONFIG_GPIO_BUTTON_0_INPUT, gpioButtonIsr0);
-    GPIO_setConfig(CONFIG_GPIO_BUTTON_1_INPUT, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_FALLING);
-    GPIO_setCallback(CONFIG_GPIO_BUTTON_1_INPUT, gpioButtonIsr1);
-
     /* Open a Watchdog driver instance */
     Watchdog_Params_init(&params);
     params.callbackFxn    = (Watchdog_Callback)watchdogCallback;
@@ -110,26 +102,58 @@ void *mainThread(void *arg0)
         while (1) {}
     }
 
-    /*
-     * The watchdog reload value is initialized during the
-     * Watchdog_open() call. The reload value can also be
-     * set dynamically during runtime.
-     *
-     * Converts TIMEOUT_MS to watchdog clock ticks.
-     * This API is not applicable for all devices.
-     * See the device specific watchdog driver documentation
-     * for your device.
-     */
     reloadValue = Watchdog_convertMsToTicks(watchdogHandle, TIMEOUT_MS);
 
-    /*
-     * A value of zero (0) indicates the converted value exceeds 32 bits
-     * OR that the API is not applicable for this specific device.
-     */
     if (reloadValue != 0)
     {
         Watchdog_setReload(watchdogHandle, reloadValue);
     }
+
+}
+
+void test_wdt_loop()
+{
+
+    /*
+        * Disabling power policy will prevent the device from entering
+        * low power state. The device will stay awake when the CPU is
+        * idle.
+        */
+    Power_disablePolicy();
+
+    /* Sleep for SLEEP_US before clearing the watchdog */
+    usleep(SLEEP_US);
+    Watchdog_clear(watchdogHandle);
+    // GPIO_toggle(CONFIG_GPIO_LED_0);
+    GPIO_write(CONFIG_GPIO_LED_0, CONFIG_GPIO_LED_ON);
+
+    /*
+        * Enabling power policy will allow the device to enter a low
+        * power state when the CPU is idle. How the watchdog peripheral
+        * behaves in a low power state is device specific.
+        */
+    Power_enablePolicy();
+
+    /* Sleep for SLEEP_US before clearing the watchdog */
+    usleep(SLEEP_US);
+    Watchdog_clear(watchdogHandle);
+    // GPIO_toggle(CONFIG_GPIO_LED_0);
+    GPIO_write(CONFIG_GPIO_LED_0, CONFIG_GPIO_LED_OFF);
+
+}
+
+void test_main_init()
+{
+    /* Call driver init functions */
+    GPIO_init();
+
+    /* Configure the LED and button pins */
+    GPIO_setConfig(CONFIG_GPIO_LED_0, GPIO_CFG_OUT_STD | GPIO_CFG_OUT_LOW);
+    GPIO_setConfig(CONFIG_GPIO_LED_1, GPIO_CFG_OUT_STD | GPIO_CFG_OUT_LOW);
+    GPIO_setConfig(CONFIG_GPIO_BUTTON_0_INPUT, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_FALLING);
+    GPIO_setCallback(CONFIG_GPIO_BUTTON_0_INPUT, gpioButtonIsr0);
+    GPIO_setConfig(CONFIG_GPIO_BUTTON_1_INPUT, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_FALLING);
+    GPIO_setCallback(CONFIG_GPIO_BUTTON_1_INPUT, gpioButtonIsr1);
 
     /* Turn on CONFIG_GPIO_LED_0 and enable CONFIG_GPIO_BUTTON_0_INPUT interrupt */
     GPIO_write(CONFIG_GPIO_LED_0, CONFIG_GPIO_LED_OFF);
@@ -137,33 +161,24 @@ void *mainThread(void *arg0)
     GPIO_enableInt(CONFIG_GPIO_BUTTON_0_INPUT);
     GPIO_enableInt(CONFIG_GPIO_BUTTON_1_INPUT);
 
+    test_wdt_init();
+}
+
+void test_main_loop()
+{
+
+    // test_wdt_loop();
+
+}
+
+/*
+ *  ======== mainThread ========
+ */
+void *mainThread(void *arg0)
+{
+    test_main_init();
     while (1)
     {
-
-        /*
-         * Disabling power policy will prevent the device from entering
-         * low power state. The device will stay awake when the CPU is
-         * idle.
-         */
-        Power_disablePolicy();
-
-        /* Sleep for SLEEP_US before clearing the watchdog */
-        usleep(SLEEP_US);
-        Watchdog_clear(watchdogHandle);
-        GPIO_toggle(CONFIG_GPIO_LED_0);
-//        GPIO_write(CONFIG_GPIO_LED_0, CONFIG_GPIO_LED_ON);
-
-        /*
-         * Enabling power policy will allow the device to enter a low
-         * power state when the CPU is idle. How the watchdog peripheral
-         * behaves in a low power state is device specific.
-         */
-        Power_enablePolicy();
-
-        /* Sleep for SLEEP_US before clearing the watchdog */
-        usleep(SLEEP_US);
-        Watchdog_clear(watchdogHandle);
-        GPIO_toggle(CONFIG_GPIO_LED_0);
-//        GPIO_write(CONFIG_GPIO_LED_0, CONFIG_GPIO_LED_OFF);
+        test_main_loop();
     }
 }

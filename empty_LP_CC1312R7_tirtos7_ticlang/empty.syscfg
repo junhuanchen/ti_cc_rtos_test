@@ -11,13 +11,15 @@
 const ADC         = scripting.addModule("/ti/drivers/ADC", {}, false);
 const ADC1        = ADC.addInstance();
 const GPIO        = scripting.addModule("/ti/drivers/GPIO");
-const GPIO1       = GPIO.addInstance();
-const GPIO15      = GPIO.addInstance();
+const GPIO2       = GPIO.addInstance();
+const GPIO3       = GPIO.addInstance();
 const I2C         = scripting.addModule("/ti/drivers/I2C", {}, false);
 const I2C1        = I2C.addInstance();
 const Power       = scripting.addModule("/ti/drivers/Power");
 const SD          = scripting.addModule("/ti/drivers/SD", {}, false);
 const SD1         = SD.addInstance();
+const SPI         = scripting.addModule("/ti/drivers/SPI", {}, false);
+const SPI1        = SPI.addInstance();
 const Temperature = scripting.addModule("/ti/drivers/Temperature");
 const UART2       = scripting.addModule("/ti/drivers/UART2", {}, false);
 const UART21      = UART2.addInstance();
@@ -44,11 +46,11 @@ const JSON        = scripting.addModule("/ti/utils/JSON");
  */
 ADC1.$name = "CONFIG_ADC_0";
 
-GPIO1.$hardware = system.deviceData.board.components.LED_RED;
-GPIO1.$name     = "CONFIG_GPIO_LED_0";
+GPIO2.$hardware = system.deviceData.board.components.LED_RED;
+GPIO2.$name     = "CONFIG_GPIO_LED_0";
 
-GPIO15.$hardware = system.deviceData.board.components.LED_GREEN;
-GPIO15.$name     = "CONFIG_GPIO_LED_1";
+GPIO3.$hardware = system.deviceData.board.components.LED_GREEN;
+GPIO3.$name     = "CONFIG_GPIO_LED_1";
 
 I2C1.$name = "CONFIG_I2C_0";
 
@@ -59,14 +61,17 @@ SD1.$name            = "CONFIG_SD_0";
 SD1.useFatFS         = true;
 SD1.chipSelect.$name = "CONFIG_GPIO_0";
 
-const SPI       = scripting.addModule("/ti/drivers/SPI", {}, false);
-const SPI1      = SPI.addInstance({}, false);
 SPI1.$name      = "CONFIG_SPI_0";
 SD1.spiInstance = SPI1;
+SPI1.$hardware  = system.deviceData.board.components.LP_SPI;
 
-UART21.$name = "CONFIG_UART2_0";
+UART21.$name              = "CONFIG_UART2_0";
+UART21.uart.txPin.$assign = "boosterpack.32";
+UART21.uart.rxPin.$assign = "boosterpack.31";
 
-UART22.$name = "CONFIG_UART2_1";
+UART22.$name              = "CONFIG_UART2_1";
+UART22.uart.txPin.$assign = "boosterpack.36";
+UART22.uart.rxPin.$assign = "boosterpack.37";
 
 Watchdog1.$name = "CONFIG_WATCHDOG_0";
 
@@ -124,24 +129,20 @@ ti154stack.ti154stackOpts.$name               = "ti_ti154stack_ti154stack_config
  */
 ADC1.adc.$suggestSolution              = "ADC0";
 ADC1.adc.adcPin.$suggestSolution       = "boosterpack.2";
-GPIO1.gpioPin.$suggestSolution         = "boosterpack.39";
-GPIO15.gpioPin.$suggestSolution        = "boosterpack.40";
+GPIO2.gpioPin.$suggestSolution         = "boosterpack.39";
+GPIO3.gpioPin.$suggestSolution         = "boosterpack.40";
 I2C1.i2c.$suggestSolution              = "I2C0";
-I2C1.i2c.sdaPin.$suggestSolution       = "boosterpack.5";
-I2C1.i2c.sclPin.$suggestSolution       = "boosterpack.8";
+I2C1.i2c.sdaPin.$suggestSolution       = "boosterpack.19";
+I2C1.i2c.sclPin.$suggestSolution       = "boosterpack.30";
 SD1.sdCSPin.$suggestSolution           = "boosterpack.9";
 SPI1.spi.$suggestSolution              = "SSI0";
-SPI1.spi.sclkPin.$suggestSolution      = "boosterpack.37";
-SPI1.spi.pociPin.$suggestSolution      = "boosterpack.36";
-SPI1.spi.picoPin.$suggestSolution      = "boosterpack.31";
+SPI1.spi.sclkPin.$suggestSolution      = "boosterpack.7";
+SPI1.spi.pociPin.$suggestSolution      = "boosterpack.14";
+SPI1.spi.picoPin.$suggestSolution      = "boosterpack.15";
 SPI1.spi.dmaRxChannel.$suggestSolution = "DMA_CH3";
 SPI1.spi.dmaTxChannel.$suggestSolution = "DMA_CH4";
 UART21.uart.$suggestSolution           = "UART1";
-UART21.uart.txPin.$suggestSolution     = "boosterpack.32";
-UART21.uart.rxPin.$suggestSolution     = "boosterpack.11";
 UART22.uart.$suggestSolution           = "UART0";
-UART22.uart.txPin.$suggestSolution     = "boosterpack.19";
-UART22.uart.rxPin.$suggestSolution     = "boosterpack.30";
 Watchdog1.watchdog.$suggestSolution    = "WDT0";
 Button1.button.$suggestSolution        = "boosterpack.13";
 Button2.button.$suggestSolution        = "boosterpack.12";
