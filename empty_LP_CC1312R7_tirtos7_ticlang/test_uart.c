@@ -126,7 +126,7 @@ void test_uart_loop(void)
     int status           = UART2_STATUS_SUCCESS;
 
     bytesRead = 0;
-    status = UART2_readTimeout(uart_1, &input, 1, &bytesRead, 10000); // 10ms
+    status = UART2_readTimeout(uart_1, &input, 1, &bytesRead, 1000); // 1ms
     if (status == UART2_STATUS_SUCCESS)
     {
         bytesWritten = 0;
@@ -148,7 +148,7 @@ void test_uart_loop(void)
     }
 
     bytesRead = 0;
-    status = UART2_readTimeout(uart_0, &input, 1, &bytesRead, 10000); // 10ms
+    status = UART2_readTimeout(uart_0, &input, 1, &bytesRead, 1000); // 1ms
     if (status == UART2_STATUS_SUCCESS)
     {
         bytesWritten = 0;
