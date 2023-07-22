@@ -40,76 +40,59 @@
 /* Driver Header files */
 #include <ti/drivers/GPIO.h>
 #include <ti/drivers/Power.h>
+#include <ti/drivers/Watchdog.h>
 
 /* Driver configuration */
 #include "ti_drivers_config.h"
 
-#include "test_wtd.h"
+#define TIMEOUT_MS 3000
+#define SLEEP_US   100000
 
-#include "test_uart.h"
-
-/*
- *  ======== gpioButtonIsr ========
- */
-void gpioButtonIsr0(uint_least8_t index)
-{
-    GPIO_write(CONFIG_GPIO_LED_1, CONFIG_GPIO_LED_OFF);
-
-    // while (1) {}
-}
+Watchdog_Handle watchdogHandle;
+Watchdog_Params params;
+uint32_t reloadValue;
 
 /*
- *  ======== gpioButtonIsr ========
+ *  ======== watchdogCallback ========
  */
-void gpioButtonIsr1(uint_least8_t index)
+void watchdogCallback(uintptr_t watchdogHandle)
 {
-    GPIO_write(CONFIG_GPIO_LED_1, CONFIG_GPIO_LED_ON);
-
-    // while (1) {} // this will trigger the watchdog
+    Power_reset();
 }
 
-struct _test_empty_
+void test_wdt_init()
 {
-    /* data */
-} test_empty;
+    Watchdog_init();
+    /* Open a Watchdog driver instance */
+    Watchdog_Params_init(&params);
+    params.callbackFxn    = (Watchdog_Callback)watchdogCallback;
+    params.debugStallMode = Watchdog_DEBUG_STALL_ON;
+    params.resetMode      = Watchdog_RESET_ON;
 
-void test_main_init()
-{
-    /* Call driver init functions */
-    GPIO_init();
-
-    /* Configure the LED and button pins */
-    GPIO_setConfig(CONFIG_GPIO_LED_0, GPIO_CFG_OUT_STD | GPIO_CFG_OUT_LOW);
-    GPIO_setConfig(CONFIG_GPIO_LED_1, GPIO_CFG_OUT_STD | GPIO_CFG_OUT_LOW);
-    GPIO_setConfig(CONFIG_GPIO_BUTTON_0_INPUT, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_FALLING);
-    GPIO_setCallback(CONFIG_GPIO_BUTTON_0_INPUT, gpioButtonIsr0);
-    GPIO_setConfig(CONFIG_GPIO_BUTTON_1_INPUT, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_FALLING);
-    GPIO_setCallback(CONFIG_GPIO_BUTTON_1_INPUT, gpioButtonIsr1);
-
-    /* Turn on CONFIG_GPIO_LED_0 and enable CONFIG_GPIO_BUTTON_0_INPUT interrupt */
-    GPIO_write(CONFIG_GPIO_LED_0, CONFIG_GPIO_LED_OFF);
-    GPIO_write(CONFIG_GPIO_LED_1, CONFIG_GPIO_LED_OFF);
-    GPIO_enableInt(CONFIG_GPIO_BUTTON_0_INPUT);
-    GPIO_enableInt(CONFIG_GPIO_BUTTON_1_INPUT);
-
-    test_wdt_init();
-    test_uart_init();
-}
-
-void test_main_loop()
-{
-    test_wdt_loop();
-    test_uart_loop();
-}
-
-/*
- *  ======== mainThread ========
- */
-void *mainThread(void *arg0)
-{
-    test_main_init();
-    while (1)
+    watchdogHandle = Watchdog_open(CONFIG_WATCHDOG_0, &params);
+    if (watchdogHandle == NULL)
     {
-        test_main_loop();
+        /* Error opening Watchdog */
+        while (1) {}
     }
+
+    reloadValue = Watchdog_convertMsToTicks(watchdogHandle, TIMEOUT_MS);
+
+    if (reloadValue != 0)
+    {
+        Watchdog_setReload(watchdogHandle, reloadValue);
+    }
+
+}
+
+void test_wdt_loop()
+{
+    GPIO_write(CONFIG_GPIO_LED_0, CONFIG_GPIO_LED_OFF);
+    Watchdog_clear(watchdogHandle);
+    Power_disablePolicy();
+    usleep(SLEEP_US);
+    Watchdog_clear(watchdogHandle);
+    Power_enablePolicy();
+    GPIO_write(CONFIG_GPIO_LED_0, CONFIG_GPIO_LED_ON);
+    // GPIO_toggle(CONFIG_GPIO_LED_0);
 }

@@ -66,12 +66,10 @@ SD1.spiInstance = SPI1;
 SPI1.$hardware  = system.deviceData.board.components.LP_SPI;
 
 UART21.$name              = "CONFIG_UART2_0";
-UART21.uart.txPin.$assign = "boosterpack.32";
-UART21.uart.rxPin.$assign = "boosterpack.31";
+UART21.uart.txPin.$assign = "boosterpack.10";
 
-UART22.$name              = "CONFIG_UART2_1";
-UART22.uart.txPin.$assign = "boosterpack.36";
-UART22.uart.rxPin.$assign = "boosterpack.37";
+UART22.$name     = "CONFIG_UART2_1";
+UART22.$hardware = system.deviceData.board.components.XDS110UART;
 
 Watchdog1.$name = "CONFIG_WATCHDOG_0";
 
@@ -132,8 +130,8 @@ ADC1.adc.adcPin.$suggestSolution       = "boosterpack.2";
 GPIO2.gpioPin.$suggestSolution         = "boosterpack.39";
 GPIO3.gpioPin.$suggestSolution         = "boosterpack.40";
 I2C1.i2c.$suggestSolution              = "I2C0";
-I2C1.i2c.sdaPin.$suggestSolution       = "boosterpack.19";
-I2C1.i2c.sclPin.$suggestSolution       = "boosterpack.30";
+I2C1.i2c.sdaPin.$suggestSolution       = "boosterpack.11";
+I2C1.i2c.sclPin.$suggestSolution       = "boosterpack.19";
 SD1.sdCSPin.$suggestSolution           = "boosterpack.9";
 SPI1.spi.$suggestSolution              = "SSI0";
 SPI1.spi.sclkPin.$suggestSolution      = "boosterpack.7";
@@ -142,7 +140,10 @@ SPI1.spi.picoPin.$suggestSolution      = "boosterpack.15";
 SPI1.spi.dmaRxChannel.$suggestSolution = "DMA_CH3";
 SPI1.spi.dmaTxChannel.$suggestSolution = "DMA_CH4";
 UART21.uart.$suggestSolution           = "UART1";
+UART21.uart.rxPin.$suggestSolution     = "boosterpack.30";
 UART22.uart.$suggestSolution           = "UART0";
+UART22.uart.txPin.$suggestSolution     = "boosterpack.4";
+UART22.uart.rxPin.$suggestSolution     = "boosterpack.3";
 Watchdog1.watchdog.$suggestSolution    = "WDT0";
 Button1.button.$suggestSolution        = "boosterpack.13";
 Button2.button.$suggestSolution        = "boosterpack.12";
