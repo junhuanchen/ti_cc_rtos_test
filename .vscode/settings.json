@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "ti_drivers_config.h": "c",
+        "gpio.h": "c",
+        "power.h": "c",
+        "watchdog.h": "c",
+        "__threading_support": "c",
+        "unistd.h": "c"
+    }
+}

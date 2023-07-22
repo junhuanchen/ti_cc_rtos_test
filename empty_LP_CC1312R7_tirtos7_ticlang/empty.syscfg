@@ -1,0 +1,148 @@
+/**
+ * These arguments were used when this file was generated. They will be automatically applied on subsequent loads
+ * via the GUI or CLI. Run CLI with '--help' for additional information on how to override these arguments.
+ * @cliArgs --board "/ti/boards/LP_CC1312R7" --rtos "tirtos7" --product "simplelink_cc13xx_cc26xx_sdk@7.10.01.24"
+ * @versions {"tool":"1.16.2+3028"}
+ */
+
+/**
+ * Import the modules used in this configuration.
+ */
+const ADC         = scripting.addModule("/ti/drivers/ADC", {}, false);
+const ADC1        = ADC.addInstance();
+const GPIO        = scripting.addModule("/ti/drivers/GPIO");
+const GPIO1       = GPIO.addInstance();
+const GPIO15      = GPIO.addInstance();
+const I2C         = scripting.addModule("/ti/drivers/I2C", {}, false);
+const I2C1        = I2C.addInstance();
+const Power       = scripting.addModule("/ti/drivers/Power");
+const SD          = scripting.addModule("/ti/drivers/SD", {}, false);
+const SD1         = SD.addInstance();
+const Temperature = scripting.addModule("/ti/drivers/Temperature");
+const UART2       = scripting.addModule("/ti/drivers/UART2", {}, false);
+const UART21      = UART2.addInstance();
+const UART22      = UART2.addInstance();
+const Watchdog    = scripting.addModule("/ti/drivers/Watchdog", {}, false);
+const Watchdog1   = Watchdog.addInstance();
+const Button      = scripting.addModule("/ti/drivers/apps/Button", {}, false);
+const Button1     = Button.addInstance();
+const Button2     = Button.addInstance();
+const Settings    = scripting.addModule("/ti/posix/tirtos/Settings");
+const BIOS        = scripting.addModule("/ti/sysbios/BIOS");
+const Event       = scripting.addModule("/ti/sysbios/knl/Event");
+const Idle        = scripting.addModule("/ti/sysbios/knl/Idle", {}, false);
+const Idle2       = Idle.addInstance();
+const Mailbox     = scripting.addModule("/ti/sysbios/knl/Mailbox");
+const Error       = scripting.addModule("/ti/sysbios/runtime/Error");
+const SysCallback = scripting.addModule("/ti/sysbios/runtime/SysCallback");
+const Timestamp   = scripting.addModule("/ti/sysbios/runtime/Timestamp");
+const ti154stack  = scripting.addModule("/ti/ti154stack/ti154stack");
+const JSON        = scripting.addModule("/ti/utils/JSON");
+
+/**
+ * Write custom configuration values to the imported modules.
+ */
+ADC1.$name = "CONFIG_ADC_0";
+
+GPIO1.$hardware = system.deviceData.board.components.LED_RED;
+GPIO1.$name     = "CONFIG_GPIO_LED_0";
+
+GPIO15.$hardware = system.deviceData.board.components.LED_GREEN;
+GPIO15.$name     = "CONFIG_GPIO_LED_1";
+
+I2C1.$name = "CONFIG_I2C_0";
+
+const CCFG              = scripting.addModule("/ti/devices/CCFG", {}, false);
+CCFG.ccfgTemplate.$name = "ti_devices_CCFG_CCFGCC26XXTemplate0";
+
+SD1.$name            = "CONFIG_SD_0";
+SD1.useFatFS         = true;
+SD1.chipSelect.$name = "CONFIG_GPIO_0";
+
+const SPI       = scripting.addModule("/ti/drivers/SPI", {}, false);
+const SPI1      = SPI.addInstance({}, false);
+SPI1.$name      = "CONFIG_SPI_0";
+SD1.spiInstance = SPI1;
+
+UART21.$name = "CONFIG_UART2_0";
+
+UART22.$name = "CONFIG_UART2_1";
+
+Watchdog1.$name = "CONFIG_WATCHDOG_0";
+
+Button1.$name     = "CONFIG_BUTTON_0";
+Button1.$hardware = system.deviceData.board.components["BTN-1"];
+
+Button2.$name     = "CONFIG_BUTTON_1";
+Button2.$hardware = system.deviceData.board.components["BTN-2"];
+
+BIOS.assertsEnabled = false;
+BIOS.heapBaseAddr   = "__primary_heap_start__";
+BIOS.heapEndAddr    = "__primary_heap_end__";
+
+const Hwi           = scripting.addModule("/ti/sysbios/family/arm/m3/Hwi", {}, false);
+Hwi.enableException = false;
+
+const Clock      = scripting.addModule("/ti/sysbios/knl/Clock", {}, false);
+Clock.tickPeriod = 10;
+
+const Timer = scripting.addModule("/ti/sysbios/family/arm/cc26xx/Timer", {}, false);
+
+Idle2.$name   = "powerIdle";
+Idle2.idleFxn = "Power_idleFunc";
+
+const Semaphore            = scripting.addModule("/ti/sysbios/knl/Semaphore", {}, false);
+Semaphore.supportsPriority = false;
+
+const Swi         = scripting.addModule("/ti/sysbios/knl/Swi", {}, false);
+Swi.numPriorities = 6;
+
+const Task             = scripting.addModule("/ti/sysbios/knl/Task", {}, false);
+Task.checkStackFlag    = false;
+Task.defaultStackSize  = 512;
+Task.idleTaskStackSize = 512;
+Task.numPriorities     = 6;
+
+Error.policy       = "Error_SPIN";
+Error.printDetails = false;
+
+const System           = scripting.addModule("/ti/sysbios/runtime/System", {}, false);
+System.abortFxn        = "System_abortSpin";
+System.exitFxn         = "System_exitSpin";
+System.extendedFormats = "%f";
+System.supportModule   = "SysCallback";
+
+ti154stack.radioConfig.codeExportConfig.$name = "ti_devices_radioconfig_code_export_param0";
+ti154stack.aesccmModule.$name                 = "CONFIG_AESCCM_0";
+ti154stack.ti154stackModule.$name             = "ti_ti154stack_ti154stack_config_mod0";
+ti154stack.ti154stackOpts.$name               = "ti_ti154stack_ti154stack_config_opts0";
+
+/**
+ * Pinmux solution for unlocked pins/peripherals. This ensures that minor changes to the automatic solver in a future
+ * version of the tool will not impact the pinmux you originally saw.  These lines can be completely deleted in order to
+ * re-solve from scratch.
+ */
+ADC1.adc.$suggestSolution              = "ADC0";
+ADC1.adc.adcPin.$suggestSolution       = "boosterpack.2";
+GPIO1.gpioPin.$suggestSolution         = "boosterpack.39";
+GPIO15.gpioPin.$suggestSolution        = "boosterpack.40";
+I2C1.i2c.$suggestSolution              = "I2C0";
+I2C1.i2c.sdaPin.$suggestSolution       = "boosterpack.5";
+I2C1.i2c.sclPin.$suggestSolution       = "boosterpack.8";
+SD1.sdCSPin.$suggestSolution           = "boosterpack.9";
+SPI1.spi.$suggestSolution              = "SSI0";
+SPI1.spi.sclkPin.$suggestSolution      = "boosterpack.37";
+SPI1.spi.pociPin.$suggestSolution      = "boosterpack.36";
+SPI1.spi.picoPin.$suggestSolution      = "boosterpack.31";
+SPI1.spi.dmaRxChannel.$suggestSolution = "DMA_CH3";
+SPI1.spi.dmaTxChannel.$suggestSolution = "DMA_CH4";
+UART21.uart.$suggestSolution           = "UART1";
+UART21.uart.txPin.$suggestSolution     = "boosterpack.32";
+UART21.uart.rxPin.$suggestSolution     = "boosterpack.11";
+UART22.uart.$suggestSolution           = "UART0";
+UART22.uart.txPin.$suggestSolution     = "boosterpack.19";
+UART22.uart.rxPin.$suggestSolution     = "boosterpack.30";
+Watchdog1.watchdog.$suggestSolution    = "WDT0";
+Button1.button.$suggestSolution        = "boosterpack.13";
+Button2.button.$suggestSolution        = "boosterpack.12";
+Timer.rtc.$suggestSolution             = "RTC0";
