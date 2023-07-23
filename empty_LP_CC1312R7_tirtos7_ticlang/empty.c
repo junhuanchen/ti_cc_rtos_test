@@ -48,6 +48,8 @@
 
 #include "test_uart.h"
 
+#include "test_fatsd.h"
+
 /*
  *  ======== gpioButtonIsr ========
  */
@@ -94,6 +96,7 @@ void test_main_init()
 
     test_wdt_init();
     test_uart_init();
+    test_fatsd_init();
 }
 
 void test_main_loop()

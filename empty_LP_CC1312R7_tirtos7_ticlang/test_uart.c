@@ -84,13 +84,33 @@ static void itoa(int n, char s[])
 }
 
 char input;
-char tempStr[64] = "\r\nhello world\r\n";
+char tempStr[256] = "\r\n hello world \r\n";
 UART2_Handle uart_0;
 UART2_Handle uart_1;
 UART2_Params uartParams_0;
 UART2_Params uartParams_1;
 size_t bytesRead;
 size_t bytesWritten = 0;
+
+void test_uart_puts(char *str)
+{
+    bytesWritten = 0;
+    while (bytesWritten == 0)
+    {
+        UART2_write(uart_1, str, strlen(str), &bytesWritten);
+    }
+}
+
+//void test_uart_printf(const char *format, ...)
+//{
+//    char buf[256];
+//    va_list args;
+//    va_start(args, format);
+//    vsprintf(buf, format, args);
+//    va_end(args);
+//
+//    test_uart_puts(buf, strlen(buf));
+//}
 
 void test_uart_init(void)
 {
@@ -139,7 +159,7 @@ void test_uart_loop(void)
             status = UART2_write(uart_1, &input, 1, &bytesWritten);
         }
 
-        // 发送给其他串口做接收测试
+        // send other uart to test 
         bytesWritten = 0;
         while (bytesWritten == 0)
         {
