@@ -151,10 +151,6 @@ void test_fatsd_init()
     SDFatFS_Handle sdfatfsHandle;
 
     SDFatFS_init();
-    
-    test_uart_puts("Starting the FatSD Raw example\r\n");
-    test_uart_puts("This example requires a FAT filesystem on the SD card.\r\n");
-    test_uart_puts("You will get errors if your SD card is not formatted with a filesystem.\r\n");
 
     /* Mount and register the SD Card */
     sdfatfsHandle = SDFatFS_open(CONFIG_SD_0, DRIVE_NUM);
@@ -180,13 +176,6 @@ void test_fatsd_init()
         fresult = f_open(&src, inputfile, FA_CREATE_NEW | FA_READ | FA_WRITE);
         if (fresult != FR_OK)
         {
-            // Display_printf(display,
-            //                0,
-            //                0,
-            //                "Error: \"%s\" could not be created.\r\nPlease check the "
-            //                "Board.html if additional jumpers are necessary.\r\n",
-            //                inputfile);
-            // Display_printf(display, 0, 0, "Aborting...\r\n");
             while (1) {}
         }
 
@@ -279,13 +268,18 @@ void test_fatsd_init()
     /* Close the file */
     f_close(&dst);
 
-    // printDrive(STR(DRIVE_NUM), &(dst.obj.fs));
+    printDrive(STR(DRIVE_NUM), &(dst.obj.fs));
 
     /* Stopping the SDCard */
     SDFatFS_close(sdfatfsHandle);
 
     test_uart_puts("Drive 0 unmounted\r\n");
 
+}
+
+void test_fatsd_loop()
+{
+    
 }
 
 /*
