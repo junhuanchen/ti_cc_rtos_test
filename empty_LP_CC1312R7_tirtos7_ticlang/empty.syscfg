@@ -57,8 +57,8 @@ I2C1.$name = "CONFIG_I2C_0";
 const CCFG              = scripting.addModule("/ti/devices/CCFG", {}, false);
 CCFG.ccfgTemplate.$name = "ti_devices_CCFG_CCFGCC26XXTemplate0";
 
-SD1.useFatFS         = true;
 SD1.$name            = "CONFIG_SD_0";
+SD1.useFatFS         = true;
 SD1.chipSelect.$name = "CONFIG_GPIO_0";
 
 SPI1.$name      = "CONFIG_SPI_0";

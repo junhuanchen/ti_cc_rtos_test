@@ -278,7 +278,6 @@ void test_fatsd_loop()
 
     test_uart_puts("Drive 0 unmounted\r\n");
 
-    // next test \ 1 i2c sensor uart gps \ adc \ radio \ ota(need) \ get temp 
 }
 
 /*

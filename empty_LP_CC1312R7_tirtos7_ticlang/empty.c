@@ -50,6 +50,9 @@
 
 #include "test_fatsd.h"
 
+#include "test_i2c.h"
+
+
 /*
  *  ======== gpioButtonIsr ========
  */
@@ -96,6 +99,8 @@ void test_main_init()
 
     test_wdt_init();
     test_uart_init();
+    test_i2c_init();
+    test_adc_init();
     test_fatsd_init();
 }
 
@@ -103,7 +108,8 @@ void test_main_loop()
 {
     test_wdt_loop();
     test_uart_loop();
-    test_fatsd_loop();
+    // test_fatsd_loop();
+    // test_i2c_loop();
 }
 
 /*
