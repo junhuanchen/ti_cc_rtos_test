@@ -136,21 +136,24 @@ void printDrive(const char *driveNumber, FATFS **fatfs)
     }
 }
 
-#include "test_uart.h"
-
 void test_fatsd_init()
 {
+    SDFatFS_init();
+}
+
+void test_fatsd_loop()
+{
     FRESULT fresult;
+
+    SDFatFS_Handle sdfatfsHandle;
+
+    // return ;
 
     /* Variables to keep track of the file copy progress */
     unsigned int bytesRead    = 0;
     unsigned int bytesWritten = 0;
     unsigned int filesize;
     unsigned int totalBytesCopied = 0;
-
-    SDFatFS_Handle sdfatfsHandle;
-
-    SDFatFS_init();
 
     /* Mount and register the SD Card */
     sdfatfsHandle = SDFatFS_open(CONFIG_SD_0, DRIVE_NUM);
@@ -275,11 +278,7 @@ void test_fatsd_init()
 
     test_uart_puts("Drive 0 unmounted\r\n");
 
-}
-
-void test_fatsd_loop()
-{
-    
+    // next test \ 1 i2c sensor uart gps \ adc \ radio \ ota(need) \ get temp 
 }
 
 /*

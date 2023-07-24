@@ -94,15 +94,16 @@ void test_main_init()
     GPIO_enableInt(CONFIG_GPIO_BUTTON_0_INPUT);
     GPIO_enableInt(CONFIG_GPIO_BUTTON_1_INPUT);
 
-//    test_wdt_init();
+    test_wdt_init();
     test_uart_init();
     test_fatsd_init();
 }
 
 void test_main_loop()
 {
-//    test_wdt_loop();
+    test_wdt_loop();
     test_uart_loop();
+    test_fatsd_loop();
 }
 
 /*
