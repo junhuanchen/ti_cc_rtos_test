@@ -1,0 +1,10 @@
+"./Application/bim_onchip_main.o"
+"./Application/bim_util.o"
+"./Application/crc32.o"
+"./Application/flash_interface_internal.o"
+"./Application/led_debug.o"
+"./Application/startup_ticlang.o"
+"./SPI/bsp_spi_cc13x2_cc26x2.o"
+"../bim_cc26x1_cc13x1.cmd"
+-l"/home/juwan/ti/simplelink_cc13xx_cc26xx_sdk_7_10_01_24/source/ti/devices/cc13x1_cc26x1/driverlib/bin/ticlang/driverlib.lib"
+-llibc.a
