@@ -58,12 +58,12 @@ UART2_Params uartParams_1;
 size_t bytesRead;
 size_t bytesWritten = 0;
 
-void test_uart_puts(char *str)
+void test_uart_puts(char *str, size_t len)
 {
     bytesWritten = 0;
     while (bytesWritten == 0)
     {
-        UART2_write(uart_1, str, strlen(str), &bytesWritten);
+        UART2_write(uart_1, str, len, &bytesWritten);
     }
 }
 
@@ -96,6 +96,9 @@ void test_uart_init(void)
 
 }
 
+#include "sensor.h"
+#include "smsgs.h"
+
 void test_uart_loop(void)
 {
     int status           = UART2_STATUS_SUCCESS;
@@ -113,6 +116,11 @@ void test_uart_loop(void)
         {
             status = UART2_write(uart_1, &input, 1, &bytesWritten);
             GPIO_toggle(CONFIG_GPIO_GLED);
+        }
+        
+        if (input == '1')
+        {
+            Sensor_sendIdentifyLedRequest();
         }
     }
 

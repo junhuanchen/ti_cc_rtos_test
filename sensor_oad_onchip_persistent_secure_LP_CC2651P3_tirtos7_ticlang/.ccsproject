@@ -16,4 +16,5 @@
 	<templateProperties value="id=sensor_oad_onchip_persistent_secure_LP_CC2651P3_tirtos7_ticlang.projectspec.sensor_oad_onchip_persistent_secure_LP_CC2651P3_tirtos7_ticlang,buildProfile=release,isHybrid=true"/>
 	<origin value="/home/juwan/ti/simplelink_cc13xx_cc26xx_sdk_7_10_01_24/examples/rtos/LP_CC2651P3/ti154stack/sensor_oad_onchip_persistent_secure/tirtos7/ticlang/sensor_oad_onchip_persistent_secure_LP_CC2651P3_tirtos7_ticlang.projectspec"/>
 	<filesToOpen value="README.html"/>
+	<isTargetManual value="false"/>
 </projectOptions>
