@@ -3,18 +3,17 @@
 <projectOptions>
 	<ccsVariant value="0:Eclipse-based"/>
 	<ccsVersion value="12.4.0"/>
-	<deviceVariant value="Cortex M.CC1312R7"/>
+	<deviceVariant value="Cortex M.CC1352R1F3"/>
 	<deviceFamily value="TMS470"/>
 	<deviceEndianness value="little"/>
-	<codegenToolVersion value="TICLANG_3.0.0.STS"/>
+	<codegenToolVersion value="TICLANG_1.3.0.LTS"/>
 	<isElfFormat value="true"/>
 	<connection value="common/targetdb/connections/TIXDS110_Connection.xml"/>
 	<rts value=""/>
 	<createSlaveProjects value=""/>
 	<ignoreDefaultDeviceSettings value="true"/>
 	<ignoreDefaultCCSSettings value="true"/>
-	<templateProperties value="id=empty_LP_CC1312R7_tirtos7_ticlang.projectspec.empty_LP_CC1312R7_tirtos7_ticlang,buildProfile=release,isHybrid=true"/>
-	<origin value="/home/junhuan/ti/simplelink_cc13xx_cc26xx_sdk_7_10_01_24/examples/rtos/LP_CC1312R7/drivers/empty/tirtos7/ticlang/empty_LP_CC1312R7_tirtos7_ticlang.projectspec"/>
+	<templateProperties value="id=bim_onchip_CC1352R1_LAUNCHXL_nortos_ticlang.projectspec.bim_onchip_CC1352R1_LAUNCHXL_nortos_ticlang,buildProfile=release,isHybrid=true"/>
+	<origin value="/home/juwan/ti/simplelink_cc13xx_cc26xx_sdk_7_10_01_24/examples/nortos/CC1352R1_LAUNCHXL/bim/bim_onchip/ticlang/bim_onchip_CC1352R1_LAUNCHXL_nortos_ticlang.projectspec"/>
 	<filesToOpen value=""/>
-	<isTargetManual value="false"/>
 </projectOptions>

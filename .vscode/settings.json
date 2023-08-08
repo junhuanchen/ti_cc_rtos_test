@@ -6,5 +6,6 @@
         "watchdog.h": "c",
         "__threading_support": "c",
         "unistd.h": "c"
-    }
+    },
+    "cmake.configureOnOpen": false
 }

@@ -35,9 +35,14 @@
                             
             </property>
                         
+            <property Type="choicelist" Value="1" id="Debug Probe Selection">
+                <choice Name="Select by serial number" value="0">
+                    <property Type="stringfield" Value="00000000" id="-- Enter the serial number"/>
+                </choice>
+            </property>
             <platform XML_version="1.2" id="platform_0">
                                 
-                <instance XML_version="1.2" desc="CC1312R7" href="devices/cc1312r7.xml" id="CC1312R7" xml="cc1312r7.xml" xmlpath="devices"/>
+                <instance XML_version="1.2" desc="CC1352R1F3" href="devices/cc1352r1f3.xml" id="CC1352R1F3" xml="cc1352r1f3.xml" xmlpath="devices"/>
                             
             </platform>
                     
