@@ -551,6 +551,8 @@ static void SimplePeripheral_init(void)
                                &charValue4);
     SimpleProfile_SetParameter(SIMPLEPROFILE_CHAR5, SIMPLEPROFILE_CHAR5_LEN,
                                charValue5);
+    SimpleProfile_SetParameter(SIMPLEPROFILE_CHAR6, SIMPLEPROFILE_CHAR6_LEN,
+                               "hello world");
   }
 
   // Register callback with SimpleGATTprofile

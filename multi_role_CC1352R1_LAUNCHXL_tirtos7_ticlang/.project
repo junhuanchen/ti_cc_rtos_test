@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
-	<name>simple_central_CC1352R1_LAUNCHXL_tirtos7_ticlang</name>
+	<name>multi_role_CC1352R1_LAUNCHXL_tirtos7_ticlang</name>
 	<comment></comment>
 	<projects>
 	</projects>
@@ -89,6 +89,31 @@
 			<name>Include/osal_snv.h</name>
 			<type>1</type>
 			<locationURI>COM_TI_SIMPLELINK_CC13XX_CC26XX_SDK_INSTALL_DIR/source/ti/ble5stack/osal/src/inc/osal_snv.h</locationURI>
+		</link>
+		<link>
+			<name>Profiles/devinfoservice.c</name>
+			<type>1</type>
+			<locationURI>COM_TI_SIMPLELINK_CC13XX_CC26XX_SDK_INSTALL_DIR/source/ti/ble5stack/profiles/dev_info/cc26xx/devinfoservice.c</locationURI>
+		</link>
+		<link>
+			<name>Profiles/devinfoservice.h</name>
+			<type>1</type>
+			<locationURI>COM_TI_SIMPLELINK_CC13XX_CC26XX_SDK_INSTALL_DIR/source/ti/ble5stack/profiles/dev_info/devinfoservice.h</locationURI>
+		</link>
+		<link>
+			<name>Profiles/gatt_profile_uuid.h</name>
+			<type>1</type>
+			<locationURI>COM_TI_SIMPLELINK_CC13XX_CC26XX_SDK_INSTALL_DIR/source/ti/ble5stack/inc/gatt_profile_uuid.h</locationURI>
+		</link>
+		<link>
+			<name>Profiles/simple_gatt_profile.c</name>
+			<type>1</type>
+			<locationURI>COM_TI_SIMPLELINK_CC13XX_CC26XX_SDK_INSTALL_DIR/source/ti/ble5stack/profiles/simple_profile/cc26xx/simple_gatt_profile.c</locationURI>
+		</link>
+		<link>
+			<name>Profiles/simple_gatt_profile.h</name>
+			<type>1</type>
+			<locationURI>COM_TI_SIMPLELINK_CC13XX_CC26XX_SDK_INSTALL_DIR/source/ti/ble5stack/profiles/simple_profile/simple_gatt_profile.h</locationURI>
 		</link>
 		<link>
 			<name>Startup/rom_init.c</name>

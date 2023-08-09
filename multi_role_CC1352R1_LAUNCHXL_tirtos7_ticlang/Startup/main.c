@@ -54,10 +54,11 @@
 #include <ti/drivers/power/PowerCC26XX.h>
 #include <ti/sysbios/BIOS.h>
 #include <ti/sysbios/knl/Clock.h>
+#include <ti/display/Display.h>
 
 #include <icall.h>
 #include "hal_assert.h"
-#include "simple_central.h"
+#include "bcomdef.h"
 
 /* Header files required to enable instruction fetch cache */
 #include <inc/hw_memmap.h>
@@ -67,12 +68,21 @@
 
 #include "ble_user_config.h"
 
+#include "multi_role.h"
+
+
 // BLE user defined configuration
+#ifdef ICALL_JT
 icall_userCfg_t user0Cfg = BLE_USER_CFG;
+#else  /* ! ICALL_JT */
+bleUserCfg_t user0Cfg = BLE_USER_CFG;
+#endif /* ICALL_JT */
 
 #endif // USE_DEFAULT_USER_CFG
 
-#include <ti/display/Display.h>
+#ifdef USE_FPGA
+#include <inc/hw_prcm.h>
+#endif // USE_FPGA
 
 /*******************************************************************************
  * MACROS
@@ -81,6 +91,15 @@ icall_userCfg_t user0Cfg = BLE_USER_CFG;
 /*******************************************************************************
  * CONSTANTS
  */
+
+#if defined( USE_FPGA )
+  #define RFC_MODE_BLE                 PRCM_RFCMODESEL_CURR_MODE1
+  #define RFC_MODE_ANT                 PRCM_RFCMODESEL_CURR_MODE4
+  #define RFC_MODE_EVERYTHING_BUT_ANT  PRCM_RFCMODESEL_CURR_MODE5
+  #define RFC_MODE_EVERYTHING          PRCM_RFCMODESEL_CURR_MODE6
+  //
+  #define SET_RFC_BLE_MODE(mode) HWREG( PRCM_BASE + PRCM_O_RFCMODESEL ) = (mode)
+#endif // USE_FPGA
 
 /*******************************************************************************
  * TYPEDEFS
@@ -97,6 +116,7 @@ icall_userCfg_t user0Cfg = BLE_USER_CFG;
 /*******************************************************************************
  * EXTERNS
  */
+extern assertCback_t halAssertCback;
 
 extern void AssertHandler(uint8 assertCause, uint8 assertSubcause);
 
@@ -120,23 +140,26 @@ extern Display_Handle dispHandle;
 int main()
 {
   /* Register Application callback to trap asserts raised in the Stack */
-  RegisterAssertCback(AssertHandler);
+  halAssertCback = AssertHandler;
 
   Board_initGeneral();
 
   // Enable iCache prefetching
   VIMSConfigure(VIMS_BASE, TRUE, TRUE);
-
   // Enable cache
   VIMSModeSet(VIMS_BASE, VIMS_MODE_ENABLED);
 
-#if !defined( POWER_SAVING )
+  /* Register Application callback to trap asserts raised in the Stack */
+  RegisterAssertCback(AssertHandler);
+
+#if !defined( POWER_SAVING ) || defined( USE_FPGA )
   /* Set constraints for Standby, powerdown and idle mode */
   // PowerCC26XX_SB_DISALLOW may be redundant
   Power_setConstraint(PowerCC26XX_SB_DISALLOW);
   Power_setConstraint(PowerCC26XX_IDLE_PD_DISALLOW);
-#endif // POWER_SAVING
+#endif // POWER_SAVING | USE_FPGA
 
+  /* Update User Configuration of the stack */
   user0Cfg.appServiceInfo->timerTickPeriod = Clock_tickPeriod;
   user0Cfg.appServiceInfo->timerMaxMillisecond  = ICall_getMaxMSecs();
 
@@ -147,7 +170,7 @@ int main()
   ICall_createRemoteTasks();
 
   /* Kick off application - Priority 1 */
-  SimpleCentral_createTask();
+  multi_role_createTask();
 
   /* enable interrupts and start SYS/BIOS */
   BIOS_start();
@@ -230,7 +253,19 @@ void AssertHandler(uint8 assertCause, uint8 assertSubcause)
       HAL_ASSERT_SPINLOCK;
       break;
 
-    default:
+    case HAL_ASSERT_CAUSE_ICALL_TIMEOUT:
+      Display_print0(dispHandle, 0, 0, "***ERROR***");
+      Display_print0(dispHandle, 2, 0, ">> ICALL TIMEOUT!");
+      HAL_ASSERT_SPINLOCK;
+      break;
+
+    case HAL_ASSERT_CAUSE_WRONG_API_CALL:
+      Display_print0(dispHandle, 0, 0, "***ERROR***");
+      Display_print0(dispHandle, 2, 0, ">> WRONG API CALL!");
+      HAL_ASSERT_SPINLOCK;
+      break;
+
+  default:
       Display_print0(dispHandle, 0, 0, "***ERROR***");
       Display_print0(dispHandle, 2, 0, ">> DEFAULT SPINLOCK!");
       HAL_ASSERT_SPINLOCK;

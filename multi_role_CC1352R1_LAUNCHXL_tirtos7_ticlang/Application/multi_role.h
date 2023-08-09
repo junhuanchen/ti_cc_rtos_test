@@ -1,16 +1,10 @@
 /******************************************************************************
-
- @file  simple_central.h
-
- @brief This file contains the Simple Central sample application
-        definitions and prototypes.
-
- Group: WCS, BTS
- Target Device: cc13xx_cc26xx
-
- ******************************************************************************
- 
- Copyright (c) 2013-2023, Texas Instruments Incorporated
+ * @file  multi_role.h
+ *
+ * @description Definitions and prototypes for the multi_role example
+ *
+ *
+ Copyright (c) 2013-2016, Texas Instruments Incorporated
  All rights reserved.
 
  Redistribution and use in source and binary forms, with or without
@@ -39,14 +33,11 @@
  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
- ******************************************************************************
- 
- 
+ *
  *****************************************************************************/
 
-#ifndef SIMPLECENTRAL_H
-#define SIMPLECENTRAL_H
+#ifndef MULTIROLE_H
+#define MULTIROLE_H
 
 #ifdef __cplusplus
 extern "C"
@@ -65,12 +56,17 @@ extern "C"
  * CONSTANTS
  */
 
-// Maximum number of scan results.
+// Maximum number of scan responses.
 // Note: this value cannot be greater than the number of items reserved in
-// scMenuConnect (See simple_central_menu.c)
+// mrMenuConnect (See multi_role_menu.c)
 // This cannot exceed 27 (two-button menu's constraint)
-#define DEFAULT_MAX_SCAN_RES                 8
+#define DEFAULT_MAX_SCAN_RES                  15
 
+// advertising PHY menu items
+#define MR_ADV_LEGACY_PHY_1_MBPS    0
+#define MR_ADV_EXT_PHY_1_MBPS       1
+#define MR_ADV_EXT_PHY_CODED        2
+  
 /*********************************************************************
  * MACROS
  */
@@ -79,52 +75,54 @@ extern "C"
  * FUNCTIONS
  */
 /*
- * Task creation function for the Simple Central.
+ * Task creation function for the Simple Peripheral.
  */
-extern void SimpleCentral_createTask(void);
-
-/*
- * Functions for menu action
- */
-
-/* Action for Menu: Set Scanning PHY */
-bool SimpleCentral_doSetScanPhy(uint8_t index);
+extern void multi_role_createTask(void);
 
 /* Action for Menu: Enable Scanning */
-bool SimpleCentral_doDiscoverDevices(uint8_t index);
+bool multi_role_doDiscoverDevices(uint8_t index);
 
 /* Action for Menu: Disable Scanning */
-bool SimpleCentral_doStopDiscovering(uint8_t index);
+bool multi_role_doStopDiscovering(uint8_t index);
 
-/* Action for Menu: AutoConnect */
-bool SimpleCentral_doAutoConnect(uint8_t index);
-
-/* Action for Menu: Connect */
-bool SimpleCentral_doConnect(uint8_t index);
+/* Actions for Menu: Init - Connect */
+bool multi_role_doConnect(uint8 index);
 
 /* Action for Menu: Cancel Connecting */
-bool SimpleCentral_doCancelConnecting(uint8_t index);
+bool multi_role_doCancelConnecting(uint8_t index);
 
 /* Action for Menu: Select Connection */
-bool SimpleCentral_doSelectConn(uint8_t index);
+bool multi_role_doSelectConn(uint8_t index);
+
+bool multi_role_doAdvertise(uint8_t index);
 
 /* Action for Menu: GATT Read */
-bool SimpleCentral_doGattRead(uint8_t index);
+bool multi_role_doGattRead(uint8_t index);
 
 /* Action for Menu: GATT Write */
-bool SimpleCentral_doGattWrite(uint8_t index);
+bool multi_role_doGattWrite(uint8_t index);
 
-/* Action for Menu: Start/Stop RSSI Read */
-bool SimpleCentral_doRssiRead(uint8_t index);
+/* Actions for Menu: Init - Conn Update */
+bool multi_role_doConnUpdate(uint8_t index);
 
-/* Action for Menu: Initiate Connection Update Procedure */
-bool SimpleCentral_doConnUpdate(uint8_t index);
+/* Actions for Menu: Init - Disconnect */
+bool multi_role_doDisconnect(uint8 index);
+
+/* Actions for Menu: Init - Advertise */
+bool mr_doAdvertise(uint8 index);
+
+/* Action for Menu: Set Scanning PHY */
+bool multi_role_doSetScanPhy(uint8_t index);
+
+/* Action for Menu: Set Advertising PHY */
+bool multi_role_doSetAdvPhy(uint8_t index);
+
+/* Action for Menu: Set Initialize PHY */
+bool multi_role_doSetInitPhy(uint8_t index);
 
 /* Action for Menu: Set Connection PHY */
-bool SimpleCentral_doSetConnPhy(uint8_t index);
+bool multi_role_doConnPhy(uint8_t index);
 
-/* Action for Menu: Disconnect */
-bool SimpleCentral_doDisconnect(uint8_t index);
 
 /*********************************************************************
 *********************************************************************/
@@ -133,4 +131,4 @@ bool SimpleCentral_doDisconnect(uint8_t index);
 }
 #endif
 
-#endif /* SIMPLECENTRAL_H */
+#endif /* MULTIROLE_H */

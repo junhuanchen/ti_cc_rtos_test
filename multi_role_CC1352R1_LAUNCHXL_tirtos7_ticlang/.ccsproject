@@ -13,7 +13,7 @@
 	<createSlaveProjects value=""/>
 	<ignoreDefaultDeviceSettings value="true"/>
 	<ignoreDefaultCCSSettings value="true"/>
-	<templateProperties value="id=simple_central_CC1352R1_LAUNCHXL_tirtos7_ticlang.projectspec.simple_central_CC1352R1_LAUNCHXL_tirtos7_ticlang,buildProfile=release,isHybrid=true"/>
-	<origin value="/home/juwan/ti/simplelink_cc13xx_cc26xx_sdk_7_10_01_24/examples/rtos/CC1352R1_LAUNCHXL/ble5stack/simple_central/tirtos7/ticlang/simple_central_CC1352R1_LAUNCHXL_tirtos7_ticlang.projectspec"/>
+	<templateProperties value="id=multi_role_CC1352R1_LAUNCHXL_tirtos7_ticlang.projectspec.multi_role_CC1352R1_LAUNCHXL_tirtos7_ticlang,buildProfile=release,isHybrid=true"/>
+	<origin value="/home/juwan/ti/simplelink_cc13xx_cc26xx_sdk_7_10_01_24/examples/rtos/CC1352R1_LAUNCHXL/ble5stack/multi_role/tirtos7/ticlang/multi_role_CC1352R1_LAUNCHXL_tirtos7_ticlang.projectspec"/>
 	<filesToOpen value=""/>
 </projectOptions>

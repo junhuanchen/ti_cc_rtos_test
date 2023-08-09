@@ -1,8 +1,9 @@
 /******************************************************************************
 
- @file  simple_central_menu.h
+ @file  multi_role_menu.h
 
- @brief This file contains menu objects for simple_central.
+ @brief This file contains macros, type definitions, and function prototypes
+        for two-button menu implementation.
 
  Group: WCS BTS
  Target Device: cc13xx_cc26xx
@@ -44,58 +45,72 @@
  
  *****************************************************************************/
 
-#ifndef SIMPLE_CENTRAL_MENU_H
-#define SIMPLE_CENTRAL_MENU_H
-
-// Duplicate menu item indices.
-#define SC_ITEM_NONE        TBM_ITEM_NONE
-#define SC_ITEM_ALL         TBM_ITEM_ALL
-
-// Note: The defines should be updated accordingly if there is any change
-//       in the order of the items of the menu objects the items belong to.
-#define SC_ITEM_SCANPHY     TBM_ITEM(0)  // "Set Scanning PHY"
-#define SC_ITEM_STARTDISC   TBM_ITEM(1)  // "Discover Devices"
-#define SC_ITEM_STOPDISC    TBM_ITEM(2)  // "Stop Discovering"
-#define SC_ITEM_CONNECT     TBM_ITEM(3)  // "Connect To"
-#define SC_ITEM_CANCELCONN  TBM_ITEM(4)  // "Cancel Connecting"
-#define SC_ITEM_SELECTCONN  TBM_ITEM(5)  // "Work With"
-#define SC_ITEM_AUTOCONNECT TBM_ITEM(6)  // "Auto Connect"
-
-#define SC_ITEM_GATTREAD    TBM_ITEM(0)  // "GATT Read"
-#define SC_ITEM_GATTWRITE   TBM_ITEM(1)  // "GATT Write"
-#define SC_ITEM_STRTRSSI    TBM_ITEM(2)  // "Start RSSI Reading"
-#define SC_ITEM_STOPRSSI    TBM_ITEM(3)  // "Stop RSSI Reading"
-#define SC_ITEM_UPDATE      TBM_ITEM(4)  // "Connection Update"
-#define SC_ITEM_CONNPHY     TBM_ITEM(5)  // "Set Connection PHY"
-#define SC_ITEM_DISCONNECT  TBM_ITEM(6)  // "Disconnect"
+#ifndef MULTI_ROLE_MENU_H
+#define MULTI_ROLE_MENU_H
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
+// Duplicate menu item indices.
+#define MR_ITEM_NONE        TBM_ITEM_NONE
+#define MR_ITEM_ALL         TBM_ITEM_ALL
+
+
+#define MR_ITEM_STARTDISC      TBM_ITEM(0)  // "Discover Devices"
+#define MR_ITEM_STOPDISC       TBM_ITEM(1)  // "Stop Discovering"
+#define MR_ITEM_CONNECT        TBM_ITEM(2)  // "Connect To"
+#define MR_ITEM_CANCELCONN     TBM_ITEM(3)  // "Cancel Connecting"
+#define MR_ITEM_SELECTCONN     TBM_ITEM(4)  // "Work With"
+#define MR_ITEM_ADVERTISE      TBM_ITEM(5)  // "Advertise"
+#define MR_ITEM_PHY            TBM_ITEM(6)  // "PHY"
+
+#define MR_ITEM_GATTREAD    TBM_ITEM(0)  // "GATT Read"
+#define MR_ITEM_GATTWRITE   TBM_ITEM(1)  // "GATT Write"
+#define MR_ITEM_UPDATE      TBM_ITEM(2)  // "Connection Update"
+#define MR_ITEM_CONNPHY     TBM_ITEM(3)  // "Set Connection PHY"
+#define MR_ITEM_DISCONNECT  TBM_ITEM(4)  // "Disconnect"
+
+#define MRMENU_ITEM_MAX_LEN     32
+typedef struct MRMenu_ItemList_t_
+{
+    uint8       str[MRMENU_ITEM_MAX_LEN];
+    int32_t     value;
+}MRMenu_ItemList_t;
+
+#define MRMENU_CONNPHY_SIZE 5
+#define MRMENU_INITPHY_SIZE 6
+#define MRMENU_SCANPHY_SIZE 3
+#define MRMENU_ADVPHY_SIZE 3
+
+extern MRMenu_ItemList_t MRMenu_connPhy[MRMENU_CONNPHY_SIZE]; 
+extern MRMenu_ItemList_t MRMenu_initPhy[MRMENU_INITPHY_SIZE];
+extern MRMenu_ItemList_t MRMenu_scanPhy[MRMENU_SCANPHY_SIZE];
+extern MRMenu_ItemList_t MRMenu_advPhy[MRMENU_ADVPHY_SIZE];
+
+
 /*
  * Menus Declarations
  */
 
 /* Main Menu Object */
-extern tbmMenuObj_t scMenuMain;
-extern tbmMenuObj_t scMenuConnect;
-extern tbmMenuObj_t scMenuScanPhy;
-extern tbmMenuObj_t scMenuAutoConnect;
-extern tbmMenuObj_t scMenuConnPhy;
-extern tbmMenuObj_t scMenuSelectConn;
-extern tbmMenuObj_t scMenuPerConn;
-extern tbmMenuObj_t scMenuGattWrite;
+extern tbmMenuObj_t mrMenuMain;
+extern tbmMenuObj_t mrMenuConnect;
+extern tbmMenuObj_t mrMenuSelectConn;
+extern tbmMenuObj_t mrMenuPerConn;
+extern tbmMenuObj_t mrMenuGattWrite;
+extern tbmMenuObj_t mrMenuPhy;
+extern tbmMenuObj_t mrMenuAdvPhy;
+extern tbmMenuObj_t mrMenuScanPhy;
+extern tbmMenuObj_t mrMenuInitPhy;
+extern tbmMenuObj_t mrMenuConnPhy;
 
-void SimpleCentral_buildMenu(void);
-
-/* Items of (Main) */
-/* Action items are defined in simple_central_menu.c */
+void multi_role_build_menu(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* SIMPLE_CENTRAL_MENU_H */
+#endif /* MULTI_ROLE_MENU_H */
 
