@@ -1,17 +1,16 @@
 /******************************************************************************
 
- @file  simple_peripheral_oad_onchip.c
+@file  multi_role.c
 
- @brief This file contains the OAD sample application based on
-        simple_peripheral for use with the CC2650 Bluetooth Low Energy
-        Protocol Stack.
+@brief This file contains the multi_role sample application for use
+with the CC2650 Bluetooth Low Energy Protocol Stack.
 
- Group: WCS, BTS
- Target Device: cc13xx_cc26xx
+Group: WCS, BTS
+Target Device: cc13xx_cc26xx
 
- ******************************************************************************
- 
- Copyright (c) 2017-2023, Texas Instruments Incorporated
+******************************************************************************
+
+ Copyright (c) 2013-2023, Texas Instruments Incorporated
  All rights reserved.
 
  Redistribution and use in source and binary forms, with or without
@@ -41,27 +40,38 @@
  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
- ******************************************************************************
- 
- 
- *****************************************************************************/
+******************************************************************************
+
+
+*****************************************************************************/
 
 /*********************************************************************
- * INCLUDES
- */
+* INCLUDES
+*/
+#ifdef FREERTOS
+#include <FreeRTOS.h>
+#include <task.h>
+//#include <pthread.h>
+#include <mqueue.h>
+#else
 #include <string.h>
-
-#include <ti/sysbios/knl/Task.h>
 #include <ti/sysbios/knl/Clock.h>
 #include <ti/sysbios/knl/Event.h>
 #include <ti/sysbios/knl/Queue.h>
+#include <ti/sysbios/knl/Task.h>
+#endif
+
+#ifdef FREERTOS
+#include <stdarg.h>
+#endif
 
 #include <ti/display/Display.h>
 
-#if (!(defined __TI_COMPILER_VERSION__) && !(defined __GNUC__))
+#if (!(defined FREERTOS) && !(defined __TI_COMPILER_VERSION__)) && !(defined(__clang__))
 #include <intrinsics.h>
 #endif
 
+#include <ti/drivers/GPIO.h>
 #include <ti/drivers/utils/List.h>
 
 #include <icall.h>
@@ -76,14 +86,6 @@
 
 // Used for OAD Reset Service APIs
 #include "oad_reset_service.h"
-// Needed for HAL_SYSTEM_RESET()
-//#include "hal_mcu.h"
-
-//#include "peripheral.h"
-
-#ifdef USE_RCOSC
-#include <rcosc_calibration.h>
-#endif //USE_RCOSC
 
 #include <ti_drivers_config.h>
 #include <board_key.h>
@@ -91,10 +93,6 @@
 #include <menu/two_btn_menu.h>
 
 #include "ti_ble_config.h"
-#ifdef LED_DEBUG
-#include <ti/drivers/GPIO.h>
-#endif //LED_DEBUG
-
 #include "simple_peripheral_oad_onchip_menu.h"
 #include "simple_peripheral_oad_onchip.h"
 
@@ -104,90 +102,111 @@
 #include <common/cc26xx/flash_interface/flash_interface.h>
 
 /*********************************************************************
- * CONSTANTS
- */
-// How often to perform periodic event (in ms)
-#define SP_PERIODIC_EVT_PERIOD               5000
+* CONSTANTS
+*/
+// How often to perform periodic event (in msec)
+#define MR_PERIODIC_EVT_PERIOD               5000
 
 // Offset into the scanRspData string the software version info is stored
 #define OAD_SOFT_VER_OFFSET                   15
 
 // Task configuration
-#define SP_TASK_PRIORITY                     1
+#define MR_TASK_PRIORITY                     1
+#ifndef MR_TASK_STACK_SIZE
+#ifdef FREERTOS
+#define MR_TASK_STACK_SIZE                   2048
+#else
+#define MR_TASK_STACK_SIZE                   1024
+#endif
 
-#ifndef SP_TASK_STACK_SIZE
-#define SP_TASK_STACK_SIZE                   2048
 #endif
 
 // Application events
-#define SP_STATE_CHANGE_EVT                  0
-#define SP_CHAR_CHANGE_EVT                   1
-#define SP_KEY_CHANGE_EVT                    2
-#define SP_ADV_EVT                           3
-#define SP_PAIR_STATE_EVT                    4
-#define SP_PASSCODE_EVT                      5
-#define SP_PERIODIC_EVT                      6
-#define SP_READ_RPA_EVT                      7
-#define SP_SEND_PARAM_UPDATE_EVT             8
-#define SP_CONN_EVT                          9
-#define SP_OAD_RESET_EVT                     10
+#define MR_EVT_CHAR_CHANGE         1
+#define MR_EVT_KEY_CHANGE          2
+#define MR_EVT_ADV_REPORT          3
+#define MR_EVT_SCAN_ENABLED        4
+#define MR_EVT_SCAN_DISABLED       5
+#define MR_EVT_SVC_DISC            6
+#define MR_EVT_ADV                 7
+#define MR_EVT_PAIRING_STATE       8
+#define MR_EVT_PASSCODE_NEEDED     9
+#define MR_EVT_SEND_PARAM_UPDATE   10
+#define MR_EVT_PERIODIC            11
+#define MR_EVT_READ_RPA            12
+#define MR_EVT_INSUFFICIENT_MEM    13
+#define MR_CONN_EVT                14
+#define MR_OAD_RESET_EVT           15
 
 
-#define SP_OAD_QUEUE_EVT                     OAD_QUEUE_EVT       // Event_Id_01
-#define SP_OAD_COMPLETE_EVT                  OAD_DL_COMPLETE_EVT // Event_Id_02
-#define SP_OAD_NO_MEM_EVT                    OAD_OUT_OF_MEM_EVT  // Event_Id_03
+#define MR_OAD_QUEUE_EVT                     OAD_QUEUE_EVT       // Event_Id_01
+#define MR_OAD_COMPLETE_EVT                  OAD_DL_COMPLETE_EVT // Event_Id_02
+#define MR_OAD_NO_MEM_EVT                    OAD_OUT_OF_MEM_EVT  // Event_Id_03
 
 // Internal Events for RTOS application
-#define SP_ICALL_EVT                         ICALL_MSG_EVENT_ID  // Event_Id_31
-#define SP_QUEUE_EVT                         UTIL_QUEUE_EVENT_ID // Event_Id_30
+#define MR_ICALL_EVT                         ICALL_MSG_EVENT_ID // Event_Id_31
+#define MR_QUEUE_EVT                         UTIL_QUEUE_EVENT_ID // Event_Id_30
 
-// Bitwise OR of all RTOS events to pend on
-#define SP_ALL_EVENTS                        (SP_ICALL_EVT             | \
-                                              SP_QUEUE_EVT             | \
-                                              SP_OAD_QUEUE_EVT         | \
-                                              SP_OAD_COMPLETE_EVT      | \
-                                              SP_OAD_NO_MEM_EVT)
+#define MR_ALL_EVENTS                        (MR_ICALL_EVT             | \
+                                              MR_QUEUE_EVT             | \
+                                              MR_OAD_QUEUE_EVT         | \
+                                              MR_OAD_COMPLETE_EVT      | \
+                                              MR_OAD_NO_MEM_EVT)
 
-// Size of string-converted device address ("0xXXXXXXXXXXXX")
-#define SP_ADDR_STR_SIZE     15
+// address string length is an ascii character for each digit +
+#define MR_ADDR_STR_SIZE     15
+
+// Supervision timeout conversion rate to miliseconds
+#define CONN_TIMEOUT_MS_CONVERSION            10
+
+// Discovery states
+typedef enum {
+  BLE_DISC_STATE_IDLE,                // Idle
+  BLE_DISC_STATE_MTU,                 // Exchange ATT MTU size
+  BLE_DISC_STATE_SVC,                 // Service discovery
+  BLE_DISC_STATE_CHAR                 // Characteristic discovery
+} discState_t;
 
 // Row numbers for two-button menu
-#define SP_ROW_SEPARATOR_1   (TBM_ROW_APP + 0)
-#define SP_ROW_STATUS_1      (TBM_ROW_APP + 1)
-#define SP_ROW_STATUS_2      (TBM_ROW_APP + 2)
-#define SP_ROW_CONNECTION    (TBM_ROW_APP + 3)
-#define SP_ROW_ADVSTATE      (TBM_ROW_APP + 4)
-#define SP_ROW_RSSI          (TBM_ROW_APP + 5)
-#define SP_ROW_IDA           (TBM_ROW_APP + 6)
-#define SP_ROW_RPA           (TBM_ROW_APP + 7)
-#define SP_ROW_DEBUG         (TBM_ROW_APP + 8)
+#define MR_ROW_SEPARATOR     (TBM_ROW_APP + 0)
+#define MR_ROW_CUR_CONN      (TBM_ROW_APP + 1)
+#define MR_ROW_ANY_CONN      (TBM_ROW_APP + 2)
+#define MR_ROW_NON_CONN      (TBM_ROW_APP + 3)
+#define MR_ROW_NUM_CONN      (TBM_ROW_APP + 4)
+#define MR_ROW_CHARSTAT      (TBM_ROW_APP + 5)
+#define MR_ROW_ADVERTIS      (TBM_ROW_APP + 6)
+#define MR_ROW_MYADDRSS      (TBM_ROW_APP + 7)
+#define MR_ROW_SECURITY      (TBM_ROW_APP + 8)
+#define MR_ROW_RPA           (TBM_ROW_APP + 9)
+
+#define CONNINDEX_INVALID  0xFF
 
 // For storing the active connections
-#define SP_RSSI_TRACK_CHNLS        1            // Max possible channels can be GAP_BONDINGS_MAX
-#define SP_MAX_RSSI_STORE_DEPTH    5
-#define SP_INVALID_HANDLE          0xFFFF
+#define MR_RSSI_TRACK_CHNLS        1            // Max possible channels can be GAP_BONDINGS_MAX
+#define MR_MAX_RSSI_STORE_DEPTH    5
+#define MR_INVALID_HANDLE          0xFFFF
 #define RSSI_2M_THRSHLD           -30           // -80 dB rssi
 #define RSSI_1M_THRSHLD           -40           // -90 dB rssi
 #define RSSI_S2_THRSHLD           -50           // -100 dB rssi
 #define RSSI_S8_THRSHLD           -60           // -120 dB rssi
-#define SP_PHY_NONE                LL_PHY_NONE  // No PHY set
+#define MR_PHY_NONE                LL_PHY_NONE  // No PHY set
 #define AUTO_PHY_UPDATE            0xFF
 
 // Spin if the expression is not true
-#define SIMPLEPERIPHERAL_ASSERT(expr) if (!(expr)) simple_peripheral_spin();
-/*********************************************************************
- * TYPEDEFS
- */
+#define MULTIROLE_ASSERT(expr) if (!(expr)) multi_role_spin();
 
-// App event passed from stack modules. This type is defined by the application
-// since it can queue events to itself however it wants.
+/*********************************************************************
+* TYPEDEFS
+*/
+
+// App event passed from profiles.
 typedef struct
 {
-  uint8_t event;                // event type
-  void    *pData;               // pointer to message
-} spEvt_t;
+  uint8_t event;    // event type
+  void *pData;   // event data pointer
+} mrEvt_t;
 
-// Container to store passcode data when passing from gapbondmgr callback
+// Container to store paring state info when passing from gapbondmgr callback
 // to app event. See the pfnPairStateCB_t documentation from the gapbondmgr.h
 // header file for more information on each parameter.
 typedef struct
@@ -195,7 +214,7 @@ typedef struct
   uint8_t state;
   uint16_t connHandle;
   uint8_t status;
-} spPairStateData_t;
+} mrPairStateData_t;
 
 // Container to store passcode data when passing from gapbondmgr callback
 // to app event. See the pfnPasscodeCB_t documentation from the gapbondmgr.h
@@ -207,7 +226,22 @@ typedef struct
   uint8_t uiInputs;
   uint8_t uiOutputs;
   uint32_t numComparison;
-} spPasscodeData_t;
+} mrPasscodeData_t;
+
+// Scanned device information record
+typedef struct
+{
+  uint8_t addrType;         // Peer Device's Address Type
+  uint8_t addr[B_ADDR_LEN]; // Peer Device Address
+} scanRec_t;
+
+// Container to store information from clock expiration using a flexible array
+// since data is not always needed
+typedef struct
+{
+  uint8_t event;
+  uint8_t data[];
+} mrClockEventData_t;
 
 // Container to store advertising event data when passing from advertising
 // callback to app event. See the respective event in GapAdvScan_Event_IDs
@@ -216,102 +250,158 @@ typedef struct
 {
   uint32_t event;
   void *pBuf;
-} spGapAdvEventData_t;
-
-// Container to store information from clock expiration using a flexible array
-// since data is not always needed
-typedef struct
-{
-  uint8_t event;                //
-  uint8_t data[];
-} spClockEventData_t;
+} mrGapAdvEventData_t;
 
 // List element for parameter update and PHY command status lists
 typedef struct
 {
   List_Elem elem;
   uint16_t  connHandle;
-} spConnHandleEntry_t;
+} mrConnHandleEntry_t;
 
 // Connected device information
 typedef struct
 {
-  uint16_t         connHandle;                        // Connection Handle
-  Clock_Struct*    pUpdateClock;                      // pointer to clock struct
-  int8_t           rssiArr[SP_MAX_RSSI_STORE_DEPTH];
-  uint8_t          rssiCntr;
-  int8_t           rssiAvg;
-  bool             phyCngRq;                          // Set to true if PHY change request is in progress
-  uint8_t          currPhy;
-  uint8_t          rqPhy;
-  uint8_t          phyRqFailCnt;                      // PHY change request count
-  bool             isAutoPHYEnable;                   // Flag to indicate auto phy change
-} spConnRec_t;
+  uint16_t              connHandle;           // Connection Handle
+  mrClockEventData_t*   pParamUpdateEventData;// pointer to paramUpdateEventData
+  uint16_t              charHandle;           // Characteristic Handle
+  uint8_t               addr[B_ADDR_LEN];     // Peer Device Address
+  Clock_Struct*         pUpdateClock;         // pointer to clock struct
+  uint8_t               discState;            // Per connection deiscovery state
+  int8_t                rssiArr[MR_MAX_RSSI_STORE_DEPTH];
+  uint8_t               rssiCntr;
+  int8_t                rssiAvg;
+  bool                  phyCngRq;                          // Set to true if PHY change request is in progress
+  uint8_t               currPhy;
+  uint8_t               rqPhy;
+  uint8_t               phyRqFailCnt;                      // PHY change request count
+  bool                  isAutoPHYEnable;                   // Flag to indicate auto phy change
+
+} mrConnRec_t;
 
 /*********************************************************************
- * GLOBAL VARIABLES
- */
-
+* GLOBAL VARIABLES
+*/
+#ifdef FREERTOS
+mqd_t g_EventsQueueID;
+#endif
 // Display Interface
 Display_Handle dispHandle = NULL;
 
-extern const imgHdr_t _imgHdr;
+/*********************************************************************
+* LOCAL VARIABLES
+*/
 
-// Task configuration
-Task_Struct spTask;
-#if defined __TI_COMPILER_VERSION__
-#pragma DATA_ALIGN(spTaskStack, 8)
-#elif defined(__GNUC__) || defined(__clang__)
-__attribute__ ((aligned (8)))
-#else
-#pragma data_alignment=8
-#endif
-
-uint8_t spTaskStack[SP_TASK_STACK_SIZE];
+#define APP_EVT_EVENT_MAX  0x13
+char *appEventStrings[] = {
+  "APP_ZERO             ",
+  "APP_CHAR_CHANGE      ",
+  "APP_KEY_CHANGE       ",
+  "APP_ADV_REPORT       ",
+  "APP_SCAN_ENABLED     ",
+  "APP_SCAN_DISABLED    ",
+  "APP_SVC_DISC         ",
+  "APP_ADV              ",
+  "APP_PAIRING_STATE    ",
+  "APP_SEND_PARAM_UPDATE",
+  "APP_PERIODIC         ",
+  "APP_READ_RPA         ",
+  "APP_INSUFFICIENT_MEM ",
+};
 
 //reset connection handle
 uint16_t resetConnHandle = LINKDB_CONNHANDLE_INVALID;
-
 /*********************************************************************
- * LOCAL VARIABLES
- */
+* LOCAL VARIABLES
+*/
 
 // Entity ID globally used to check for source and/or destination of messages
 static ICall_EntityID selfEntity;
 
 // Event globally used to post local events and pend on system and
 // local events.
+#ifdef FREERTOS
+ICall_SyncHandle syncEvent;
+#else
 static ICall_SyncHandle syncEvent;
-
-// Queue object used for app messages
-static Queue_Struct appMsgQueue;
-static Queue_Handle appMsgQueueHandle;
-
-// Clock instance for internal periodic events. Only one is needed since
-// GattServApp will handle notifying all connected GATT clients
+#endif
+// Clock instances for internal periodic events.
 static Clock_Struct clkPeriodic;
 // Clock instance for RPA read events.
 static Clock_Struct clkRpaRead;
 
-// Memory to pass periodic event ID to clock handler
-spClockEventData_t argPeriodic =
-{ .event = SP_PERIODIC_EVT };
+// Memory to pass periodic event to clock handler
+mrClockEventData_t periodicUpdateData =
+{
+  .event = MR_EVT_PERIODIC
+};
 
 // Memory to pass RPA read event ID to clock handler
-spClockEventData_t argRpaRead =
-{ .event = SP_READ_RPA_EVT };
+mrClockEventData_t argRpaRead =
+{
+  .event = MR_EVT_READ_RPA
+};
+#ifdef FREERTOS
+/*Non blocking queue */
+ mqd_t g_POSIX_appMsgQueue;
 
-// Per-handle connection info
-static spConnRec_t connList[MAX_NUM_BLE_CONNS];
+#else
+// Queue object used for app messages
+static Queue_Struct appMsg;
+static Queue_Handle appMsgQueue;
+#endif
 
-// Current connection handle as chosen by menu
-static uint16_t menuConnHandle = LINKDB_CONNHANDLE_INVALID;
+// Task configuration
+#ifdef FREERTOS
+typedef uint32_t * Task_Handle;
+TaskHandle_t mrTask = NULL;
+#else
+Task_Struct mrTask;
+#endif
+
+#ifndef FREERTOS
+#if defined __TI_COMPILER_VERSION__
+#pragma DATA_ALIGN(mrTaskStack, 8)
+#else
+#pragma data_alignment=8
+#endif
+#ifndef FREERTOS
+uint8_t mrTaskStack[MR_TASK_STACK_SIZE];
+#endif
+#endif
+
+// Maximim PDU size (default = 27 octets)
+static uint16 mrMaxPduSize;
+
+#if (DEFAULT_DEV_DISC_BY_SVC_UUID == TRUE)
+// Number of scan results filtered by Service UUID
+static uint8_t numScanRes = 0;
+
+// Scan results filtered by Service UUID
+static scanRec_t scanList[DEFAULT_MAX_SCAN_RES];
+#endif // DEFAULT_DEV_DISC_BY_SVC_UUID
+
+// Discovered service start and end handle
+static uint16_t svcStartHdl = 0;
+static uint16_t svcEndHdl = 0;
+
+// Value to write
+static uint8_t charVal = 0;
+
+// Number of connected devices
+static uint8_t numConn = 0;
+
+// Connection handle of current connection
+static uint16_t mrConnHandle = LINKDB_CONNHANDLE_INVALID;
 
 // List to store connection handles for set phy command status's
 static List_List setPhyCommStatList;
 
 // List to store connection handles for queued param updates
 static List_List paramUpdateList;
+
+// Per-handle connection info
+static mrConnRec_t connList[MAX_NUM_BLE_CONNS];
 
 // Variable used to store the number of messages pending once OAD completes
 // The application cannot reboot until all pending messages are sent
@@ -323,103 +413,126 @@ static bool oadWaitReboot = false;
 static uint32_t  sendSvcChngdOnNextBoot = FALSE;
 
 // Advertising handles
-static uint8 advHandleLegacy;
-static uint8 advHandleLongRange;
+static uint8 advHandle;
 
+static bool mrIsAdvertising = false;
 // Address mode
 static GAP_Addr_Modes_t addrMode = DEFAULT_ADDRESS_MODE;
 
 // Current Random Private Address
 static uint8 rpa[B_ADDR_LEN] = {0};
+
+// Initiating PHY
+static uint8_t mrInitPhy = INIT_PHY_1M;
+
 /*********************************************************************
- * LOCAL FUNCTIONS
- */
+* LOCAL FUNCTIONS
+*/
+static void multi_role_init(void);
+static void multi_role_scanInit(void);
+static void multi_role_advertInit(void);
 
-static void SimplePeripheral_init( void );
-static void SimplePeripheral_taskFxn(UArg a0, UArg a1);
+#ifdef FREERTOS
+static void multi_role_taskFxn(void *a0);
+#else//TI_RTOS
+static void multi_role_taskFxn(UArg a0, UArg a1);
+#endif
 
-static uint8_t SimplePeripheral_processStackMsg(ICall_Hdr *pMsg);
-static uint8_t SimplePeripheral_processGATTMsg(gattMsgEvent_t *pMsg);
-static void SimplePeripheral_processGapMessage(gapEventHdr_t *pMsg);
-static void SimplePeripheral_advCallback(uint32_t event, void *pBuf, uintptr_t arg);
-static void SimplePeripheral_processAdvEvent(spGapAdvEventData_t *pEventData);
-static void SimplePeripheral_processAppMsg(spEvt_t *pMsg);
-static void SimplePeripheral_processCharValueChangeEvt(uint8_t paramId);
-static void SimplePeripheral_performPeriodicTask(void);
-static void SimplePeripheral_updateRPA(void);
-static void SimplePeripheral_clockHandler(UArg arg);
-static void SimplePeripheral_passcodeCb(uint8_t *pDeviceAddr, uint16_t connHandle,
-                                        uint8_t uiInputs, uint8_t uiOutputs,
-                                        uint32_t numComparison);
-static void SimplePeripheral_pairStateCb(uint16_t connHandle, uint8_t state,
-                                         uint8_t status);
-static void SimplePeripheral_processPairState(spPairStateData_t *pPairState);
-static void SimplePeripheral_processPasscode(spPasscodeData_t *pPasscodeData);
-static void SimplePeripheral_charValueChangeCB(uint8_t paramId);
-static status_t SimplePeripheral_enqueueMsg(uint8_t event, void *pData);
-void SimplePeripheral_processOadResetWriteCB(uint16_t connHandle,
-                                             uint16_t bim_var);
-static void SimplePeripheral_keyChangeHandler(uint8 keys);
-static void SimplePeripheral_handleKeys(uint8_t keys);
-static void SimplePeripheral_processOadResetEvt(oadResetWrite_t *resetEvt);
-static void SimplePeripheral_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg);
-static void SimplePeripheral_initPHYRSSIArray(void);
-static void SimplePeripheral_updatePHYStat(uint16_t eventCode, uint8_t *pMsg);
-static uint8_t SimplePeripheral_addConn(uint16_t connHandle);
-static uint8_t SimplePeripheral_getConnIndex(uint16_t connHandle);
-static uint8_t SimplePeripheral_removeConn(uint16_t connHandle);
-static void SimplePeripheral_processParamUpdate(uint16_t connHandle);
-static uint8_t SimplePeripheral_processL2CAPMsg(l2capSignalEvent_t *pMsg);
-static status_t SimplePeripheral_startAutoPhyChange(uint16_t connHandle);
-static status_t SimplePeripheral_stopAutoPhyChange(uint16_t connHandle);
-static status_t SimplePeripheral_setPhy(uint16_t connHandle, uint8_t allPhys,
+static uint8_t multi_role_processStackMsg(ICall_Hdr *pMsg);
+static uint8_t multi_role_processGATTMsg(gattMsgEvent_t *pMsg);
+static void multi_role_processAppMsg(mrEvt_t *pMsg);
+static void multi_role_processCharValueChangeEvt(uint8_t paramID);
+static void multi_role_processGATTDiscEvent(gattMsgEvent_t *pMsg);
+static void multi_role_processPasscode(mrPasscodeData_t *pData);
+static void multi_role_processPairState(mrPairStateData_t* pairingEvent);
+static void multi_role_processGapMsg(gapEventHdr_t *pMsg);
+static void multi_role_processParamUpdate(uint16_t connHandle);
+static void multi_role_processAdvEvent(mrGapAdvEventData_t *pEventData);
+
+static void multi_role_charValueChangeCB(uint8_t paramID);
+static status_t multi_role_enqueueMsg(uint8_t event, void *pData);
+static void multi_role_handleKeys(uint8_t keys);
+static uint16_t multi_role_getConnIndex(uint16_t connHandle);
+static void multi_role_keyChangeHandler(uint8_t keys);
+static uint8_t multi_role_addConnInfo(uint16_t connHandle, uint8_t *pAddr,
+                                      uint8_t role);
+static void multi_role_performPeriodicTask(void);
+#ifdef FREERTOS
+static void multi_role_clockHandler(void * arg);
+#else
+static void multi_role_clockHandler(UArg arg);
+#endif
+static uint8_t multi_role_clearConnListEntry(uint16_t connHandle);
+#if (DEFAULT_DEV_DISC_BY_SVC_UUID == TRUE)
+static void multi_role_addScanInfo(uint8_t *pAddr, uint8_t addrType);
+static bool multi_role_findSvcUuid(uint16_t uuid, uint8_t *pData,
+                                      uint16_t dataLen);
+#endif // DEFAULT_DEV_DISC_BY_SVC_UUID
+static uint8_t multi_role_removeConnInfo(uint16_t connHandle);
+static void multi_role_menuSwitchCb(tbmMenuObj_t* pMenuObjCurr,
+                                       tbmMenuObj_t* pMenuObjNext);
+static void multi_role_startSvcDiscovery(void);
+#ifndef Display_DISABLE_ALL
+static char* multi_role_getConnAddrStr(uint16_t connHandle);
+#endif
+static void multi_role_advCB(uint32_t event, void *pBuf, uintptr_t arg);
+static void multi_role_scanCB(uint32_t evt, void* msg, uintptr_t arg);
+static void multi_role_passcodeCB(uint8_t *deviceAddr, uint16_t connHandle,
+                                  uint8_t uiInputs, uint8_t uiOutputs, uint32_t numComparison);
+static void multi_role_pairStateCB(uint16_t connHandle, uint8_t state,
+                                   uint8_t status);
+static void multi_role_updateRPA(void);
+static void multi_role_connEvtCB(Gap_ConnEventRpt_t *pReport);
+static void multi_role_processConnEvt(Gap_ConnEventRpt_t *pReport);
+void multi_role_processOadResetWriteCB(uint16_t connHandle, uint16_t bim_var);
+static uint8_t multi_role_processL2CAPMsg(l2capSignalEvent_t *pMsg);
+static void multi_role_processOadResetEvt(oadResetWrite_t *resetEvt);
+static void multi_role_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg);
+static void multi_role_updatePHYStat(uint16_t eventCode, uint8_t *pMsg);
+
+static status_t multi_role_setPhy(uint16_t connHandle, uint8_t allPhys,
                                         uint8_t txPhy, uint8_t rxPhy,
                                         uint16_t phyOpts);
-static uint8_t SimplePeripheral_clearConnListEntry(uint16_t connHandle);
-static void SimplePeripheral_menuSwitchCb(tbmMenuObj_t* pMenuObjCurr,
-                                          tbmMenuObj_t* pMenuObjNext);
-static void SimplePeripheral_connEvtCB(Gap_ConnEventRpt_t *pReport);
-static void SimplePeripheral_processConnEvt(Gap_ConnEventRpt_t *pReport);
 
 /*********************************************************************
  * EXTERN FUNCTIONS
- */
+*/
 extern void AssertHandler(uint8 assertCause, uint8 assertSubcause);
 
 /*********************************************************************
- * PROFILE CALLBACKS
- */
+* PROFILE CALLBACKS
+*/
 
 // GAP Bond Manager Callbacks
-static gapBondCBs_t SimplePeripheral_BondMgrCBs =
+static gapBondCBs_t multi_role_BondMgrCBs =
 {
-  SimplePeripheral_passcodeCb,       // Passcode callback
-  SimplePeripheral_pairStateCb       // Pairing/Bonding state Callback
+  multi_role_passcodeCB, // Passcode callback
+  multi_role_pairStateCB                  // Pairing state callback
 };
 
 // Simple GATT Profile Callbacks
-static simpleProfileCBs_t SimplePeripheral_simpleProfileCBs =
+static simpleProfileCBs_t multi_role_simpleProfileCBs =
 {
-  SimplePeripheral_charValueChangeCB // Characteristic value change callback
+  multi_role_charValueChangeCB // Characteristic value change callback
 };
 
-static oadResetWriteCB_t SimplePeripheral_oadResetCBs =
+static oadResetWriteCB_t multi_role_oadResetCBs =
 {
-  SimplePeripheral_processOadResetWriteCB // Write Callback.
+  multi_role_processOadResetWriteCB // Write Callback.
 };
 
 /*********************************************************************
- * PUBLIC FUNCTIONS
- */
+* PUBLIC FUNCTIONS
+*/
 
 /*********************************************************************
- * @fn      simple_peripheral_spin
+ * @fn      multi_role_spin
  *
  * @brief   Spin forever
  *
  * @param   none
  */
-static void simple_peripheral_spin(void)
+static void multi_role_spin(void)
 {
   volatile uint8_t x = 0;
 
@@ -430,35 +543,67 @@ static void simple_peripheral_spin(void)
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_createTask
- *
- * @brief   Task creation function for the Simple Peripheral OAD User App.
- */
-void SimplePeripheral_createTask(void)
+* @fn      multi_role_createTask
+*
+* @brief   Task creation function for multi_role.
+*
+* @param   None.
+*
+* @return  None.
+*/
+
+
+void multi_role_createTask(void)
 {
-  Task_Params taskParams;
 
-  // Configure task
-  Task_Params_init(&taskParams);
-  taskParams.stack = spTaskStack;
-  taskParams.stackSize = SP_TASK_STACK_SIZE;
-  taskParams.priority = SP_TASK_PRIORITY;
+#ifdef FREERTOS
+    BaseType_t xReturned;
 
-  Task_construct(&spTask, SimplePeripheral_taskFxn, &taskParams, NULL);
+    /* Create the task, storing the handle. */
+    xReturned = xTaskCreate(
+            multi_role_taskFxn,                     /* Function that implements the task. */
+            "MULTI_ROLE_APP",                       /* Text name for the task. */
+            MR_TASK_STACK_SIZE / sizeof(uint32_t),  /* Stack size in words, not bytes. */
+            ( void * ) NULL,                        /* Parameter passed into the task. */
+            MR_TASK_PRIORITY,                       /* Priority at which the task is created. */
+            &mrTask );                              /* Used to pass out the created task's handle. */
+
+    if(xReturned == errCOULD_NOT_ALLOCATE_REQUIRED_MEMORY)
+    {
+        /* Creation of FreeRTOS task failed */
+        while(1);
+    }
+#else
+    Task_Params taskParams;
+
+      // Configure task
+      Task_Params_init(&taskParams);
+      taskParams.stack = mrTaskStack;
+      taskParams.stackSize = MR_TASK_STACK_SIZE;
+      taskParams.priority = MR_TASK_PRIORITY;
+      Task_construct(&mrTask, multi_role_taskFxn, &taskParams, NULL);
+
+#endif
+
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_init
- *
- * @brief   Called during initialization and contains application
- *          specific initialization (ie. hardware initialization/setup,
- *          table initialization, power up notification, etc), and
- *          profile initialization/setup.
- */
-static void SimplePeripheral_init(void)
+* @fn      multi_role_init
+*
+* @brief   Called during initialization and contains application
+*          specific initialization (ie. hardware initialization/setup,
+*          table initialization, power up notification, etc), and
+*          profile initialization/setup.
+*
+* @param   None.
+*
+* @return  None.
+*/
+static void multi_role_init(void)
 {
+  BLE_LOG_INT_TIME(0, BLE_LOG_MODULE_APP, "APP : ---- init ", MR_TASK_PRIORITY);
   // Create the menu
-  SimplePeripheral_buildMenu();
+  multi_role_build_menu();
   // ******************************************************************
   // N0 STACK API CALLS CAN OCCUR BEFORE THIS CALL TO ICall_registerApp
   // ******************************************************************
@@ -496,12 +641,23 @@ static void SimplePeripheral_init(void)
   RCOSC_enableCalibration();
 #endif // USE_RCOSC
 
+#ifdef FREERTOS
+  Util_constructQueue(&g_POSIX_appMsgQueue);
+#else
   // Create an RTOS queue for message from profile to be sent to app.
-  appMsgQueueHandle = Util_constructQueue(&appMsgQueue);
-
+  appMsgQueue = Util_constructQueue(&appMsg);
+#endif
   // Create one-shot clock for internal periodic events.
-  Util_constructClock(&clkPeriodic, SimplePeripheral_clockHandler,
-                      SP_PERIODIC_EVT_PERIOD, 0, false, (UArg)&argPeriodic);
+#ifdef FREERTOS
+  Util_constructClock(&clkPeriodic,(void*) multi_role_clockHandler,
+                        MR_PERIODIC_EVT_PERIOD, 0, false,
+                        (void*)&periodicUpdateData);
+#else
+
+  Util_constructClock(&clkPeriodic, multi_role_clockHandler,
+                      MR_PERIODIC_EVT_PERIOD, 0, false,
+                      (UArg)&periodicUpdateData);
+#endif
 
   uint8_t swVer[OAD_SW_VER_LEN];
   OAD_getSWVersion(swVer, OAD_SW_VER_LEN);
@@ -509,7 +665,7 @@ static void SimplePeripheral_init(void)
   // Set the Device Name characteristic in the GAP GATT Service
   // For more information, see the section in the User's Guide:
   // http://software-dl.ti.com/lprf/ble5stack-latest/
-  GGS_SetParameter(GGS_DEVICE_NAME_ATT, GAP_DEVICE_NAME_LEN, attDeviceName);
+  GGS_SetParameter(GGS_DEVICE_NAME_ATT, GAP_DEVICE_NAME_LEN, (void *)attDeviceName);
 
   // Configure GAP
   {
@@ -524,12 +680,12 @@ static void SimplePeripheral_init(void)
   setBondManagerParameters();
 
   // Initialize GATT attributes
-  GGS_AddService(GAP_SERVICE);                 // GAP GATT Service
-  GATTServApp_AddService(GATT_ALL_SERVICES);   // GATT Service
+  GGS_AddService(GAP_SERVICE);                 // GAP
+  GATTServApp_AddService(GATT_ALL_SERVICES);   // GATT attributes
   DevInfo_AddService();                        // Device Information Service
   SimpleProfile_AddService(GATT_ALL_SERVICES); // Simple GATT Profile
 
-  Reset_addService((oadUsrAppCBs_t *)&SimplePeripheral_oadResetCBs);
+  Reset_addService((oadUsrAppCBs_t *)&multi_role_oadResetCBs);
 
   // Setup the SimpleProfile Characteristic Values
   // For more information, see the GATT and GATTServApp sections in the User's Guide:
@@ -554,10 +710,10 @@ static void SimplePeripheral_init(void)
   }
 
   // Register callback with SimpleGATTprofile
-  SimpleProfile_RegisterAppCBs(&SimplePeripheral_simpleProfileCBs);
+  SimpleProfile_RegisterAppCBs(&multi_role_simpleProfileCBs);
 
   // Start Bond Manager and register callback
-  VOID GAPBondMgr_Register(&SimplePeripheral_BondMgrCBs);
+  VOID GAPBondMgr_Register(&multi_role_BondMgrCBs);
 
   // Register with GAP for HCI/Host messages. This is needed to receive HCI
   // events. For more information, see the HCI section in the User's Guide:
@@ -572,8 +728,8 @@ static void SimplePeripheral_init(void)
   {
     // Set initial values to maximum, RX is set to max. by default(251 octets, 2120us)
     // Some brand smartphone is essentially needing 251/2120, so we set them here.
-    #define APP_SUGGESTED_PDU_SIZE 251 //default is 27 octets(TX)
-    #define APP_SUGGESTED_TX_TIME 2120 //default is 328us(TX)
+  #define APP_SUGGESTED_PDU_SIZE 251 //default is 27 octets(TX)
+  #define APP_SUGGESTED_TX_TIME 2120 //default is 328us(TX)
 
     // This API is documented in hci.h
     // See the LE Data Length Extension section in the BLE5-Stack User's Guide for information on using this command:
@@ -581,31 +737,33 @@ static void SimplePeripheral_init(void)
     HCI_LE_WriteSuggestedDefaultDataLenCmd(APP_SUGGESTED_PDU_SIZE, APP_SUGGESTED_TX_TIME);
   }
 
-  // Initialize GATT Client
+  // Initialize GATT Client, used by GAPBondMgr to look for RPAO characteristic for network privacy
   GATT_InitClient();
 
   // Init key debouncer
-  Board_initKeys(SimplePeripheral_keyChangeHandler);
+  Board_initKeys(multi_role_keyChangeHandler);
+
+  // Register to receive incoming ATT Indications/Notifications
+  GATT_RegisterForInd(selfEntity);
 
   // Initialize Connection List
-  SimplePeripheral_clearConnListEntry(LINKDB_CONNHANDLE_ALL);
+  multi_role_clearConnListEntry(LINKDB_CONNHANDLE_ALL);
 
-  //Initialize GAP layer for Peripheral role and register to receive GAP events
-  GAP_DeviceInit(GAP_PROFILE_PERIPHERAL, selfEntity, addrMode, &pRandomAddress);
-
-  // Initialize array to store connection handle and RSSI values
-  SimplePeripheral_initPHYRSSIArray();
+  // Setup the GAP Bond Manager
+  BLE_LOG_INT_TIME(0, BLE_LOG_MODULE_APP, "APP : ---- call GAP_DeviceInit", GAP_PROFILE_PERIPHERAL | GAP_PROFILE_CENTRAL);
+  //Initialize GAP layer for Peripheral and Central role and register to receive GAP events
+  GAP_DeviceInit(GAP_PROFILE_PERIPHERAL | GAP_PROFILE_CENTRAL, selfEntity,
+                 addrMode, &pRandomAddress);
 
   // The type of display is configured based on the BOARD_DISPLAY_USE...
   // preprocessor definitions
   dispHandle = Display_open(Display_Type_ANY, NULL);
 
-  // Initialize Two-Button Menu module
-  TBM_SET_TITLE(&spMenuMain, "Simple Peripheral");
-  tbm_setItemStatus(&spMenuMain, SP_ITEM_SELECT_OAD_DBG, SP_ITEM_SELECT_CONN);
+  // Disable all items in the main menu
+  tbm_setItemStatus(&mrMenuMain, MR_ITEM_NONE, MR_ITEM_ALL);
 
-  tbm_initTwoBtnMenu(dispHandle, &spMenuMain, 4, SimplePeripheral_menuSwitchCb);
-  Display_printf(dispHandle, SP_ROW_SEPARATOR_1, 0, "====================");
+  // Init two button menu
+  tbm_initTwoBtnMenu(dispHandle, &mrMenuMain, 5, multi_role_menuSwitchCb);
 
   uint8_t versionStr[OAD_SW_VER_LEN + 1];
 
@@ -615,7 +773,7 @@ static void SimplePeripheral_init(void)
   versionStr[OAD_SW_VER_LEN] = 0;
 
   // Display Image version
-  Display_print1(dispHandle, 0, 0, "SBP On-chip OAD v%s",
+  Display_print1(dispHandle, MR_ROW_SEPARATOR, 0, "== DLS On-chip OAD v%s ==",
                  versionStr);
 
   /*
@@ -643,16 +801,22 @@ static void SimplePeripheral_init(void)
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_taskFxn
- *
- * @brief   Application task entry point for the Simple Peripheral.
- *
- * @param   a0, a1 - not used.
- */
-static void SimplePeripheral_taskFxn(UArg a0, UArg a1)
+* @fn      multi_role_taskFxn
+*
+* @brief   Application task entry point for the multi_role.
+*
+* @param   a0, a1 - not used.
+*
+* @return  None.
+*/
+#ifdef FREERTOS
+static void multi_role_taskFxn(void* a0)
+#else
+static void multi_role_taskFxn(UArg a0, UArg a1)
+#endif
 {
   // Initialize application
-  SimplePeripheral_init();
+  multi_role_init();
 
   // Application main loop
   for (;;)
@@ -662,8 +826,13 @@ static void SimplePeripheral_taskFxn(UArg a0, UArg a1)
     // Waits for an event to be posted associated with the calling thread.
     // Note that an event associated with a thread is posted when a
     // message is queued to the message receive queue of the thread
-    events = Event_pend(syncEvent, Event_Id_NONE, SP_ALL_EVENTS,
-                        ICALL_TIMEOUT_FOREVER);
+
+#ifdef FREERTOS
+    mq_receive(syncEvent, (char*)&events, sizeof(uint32_t), NULL);
+#else
+    events = Event_pend(syncEvent, Event_Id_NONE, MR_ALL_EVENTS,
+                        ICALL_TIMEOUT_FOREVER); // event_31 + event_30
+#endif
 
     if (events)
     {
@@ -685,7 +854,7 @@ static void SimplePeripheral_taskFxn(UArg a0, UArg a1)
           if (pEvt->signature != 0xffff)
           {
             // Process inter-task message
-            safeToDealloc = SimplePeripheral_processStackMsg((ICall_Hdr *)pMsg);
+            safeToDealloc = multi_role_processStackMsg((ICall_Hdr *)pMsg);
           }
         }
 
@@ -696,26 +865,46 @@ static void SimplePeripheral_taskFxn(UArg a0, UArg a1)
       }
 
       // If RTOS queue is not empty, process app message.
-      if (events & SP_QUEUE_EVT)
+      if (events & MR_QUEUE_EVT)
       {
-        while (!Queue_empty(appMsgQueueHandle))
-        {
-          spEvt_t *pMsg = (spEvt_t *)Util_dequeueMsg(appMsgQueueHandle);
-          if (pMsg)
-          {
-            // Process message.
-            SimplePeripheral_processAppMsg(pMsg);
+#ifdef FREERTOS
 
-            // Free the space from the message.
-            ICall_free(pMsg);
-          }
-        }
+          mrEvt_t *pMsg;
+          do {
+              pMsg = (mrEvt_t *)Util_dequeueMsg(g_POSIX_appMsgQueue);
+              if (NULL != pMsg)
+              {
+                  // Process message.
+                  multi_role_processAppMsg(pMsg);
+
+                  // Free the space from the message.
+                  ICall_free(pMsg);
+              }
+              else
+              {
+                  break;
+              }
+          }while(1);
+#else
+          while (!Queue_empty(appMsgQueue))
+               {
+                 mrEvt_t *pMsg = (mrEvt_t *)Util_dequeueMsg(appMsgQueue);
+                 if (pMsg)
+                 {
+                   // Process message.
+                   multi_role_processAppMsg(pMsg);
+
+                   // Free the space from the message.
+                   ICall_free(pMsg);
+                 }
+               }
+#endif
       }
       // OAD events
-      if(events & SP_OAD_NO_MEM_EVT)
+      if(events & MR_OAD_NO_MEM_EVT)
       {
         // The OAD module is unable to allocate memory, print failure, cancel OAD
-        Display_print0(dispHandle, SP_ROW_STATUS_1, 0,
+        Display_print0(dispHandle, MR_ROW_SEPARATOR, 0,
                         "OAD malloc fail, cancelling OAD");
         OAD_cancel();
 #ifdef LED_DEBUG
@@ -724,7 +913,7 @@ static void SimplePeripheral_taskFxn(UArg a0, UArg a1)
 #endif //LED_DEBUG
       }
        // OAD queue processing
-      if(events & SP_OAD_QUEUE_EVT)
+      if(events & MR_OAD_QUEUE_EVT)
       {
         // Process the OAD Message Queue
         uint8_t status = OAD_processQueue();
@@ -733,11 +922,11 @@ static void SimplePeripheral_taskFxn(UArg a0, UArg a1)
         // Return codes can be found in oad_constants.h
         if(status == OAD_DL_COMPLETE)
         {
-          Display_print0(dispHandle, SP_ROW_STATUS_1, 0, "OAD DL Complete, wait for Enable");
+          Display_print0(dispHandle, MR_ROW_SEPARATOR, 0, "OAD DL Complete, wait for Enable");
         }
         else if(status == OAD_IMG_ID_TIMEOUT)
         {
-          Display_print0(dispHandle, SP_ROW_STATUS_1, 0, "ImgID Timeout, disconnecting");
+          Display_print0(dispHandle, MR_ROW_SEPARATOR, 0, "ImgID Timeout, disconnecting");
 
           // This may be an attack, terminate the link,
           // Note HCI_DISCONNECT_REMOTE_USER_TERM seems to most closet reason for
@@ -746,12 +935,12 @@ static void SimplePeripheral_taskFxn(UArg a0, UArg a1)
         }
         else if(status != OAD_SUCCESS)
         {
-          Display_print1(dispHandle, SP_ROW_STATUS_1, 0, "OAD Error: %d", status);
+          Display_print1(dispHandle, MR_ROW_SEPARATOR, 0, "OAD Error: %d", status);
         }
 
       }
 
-      if(events & SP_OAD_COMPLETE_EVT)
+      if(events & MR_OAD_COMPLETE_EVT)
       {
         // Register for L2CAP Flow Control Events
         L2CAP_RegisterFlowCtrlTask(selfEntity);
@@ -762,39 +951,41 @@ static void SimplePeripheral_taskFxn(UArg a0, UArg a1)
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_processStackMsg
- *
- * @brief   Process an incoming stack message.
- *
- * @param   pMsg - message to process
- *
- * @return  TRUE if safe to deallocate incoming message, FALSE otherwise.
- */
-static uint8_t SimplePeripheral_processStackMsg(ICall_Hdr *pMsg)
+* @fn      multi_role_processStackMsg
+*
+* @brief   Process an incoming stack message.
+*
+* @param   pMsg - message to process
+*
+* @return  TRUE if safe to deallocate incoming message, FALSE otherwise.
+*/
+static uint8_t multi_role_processStackMsg(ICall_Hdr *pMsg)
 {
-  // Always dealloc pMsg unless set otherwise
   uint8_t safeToDealloc = TRUE;
+
+  BLE_LOG_INT_INT(0, BLE_LOG_MODULE_APP, "APP : Stack msg status=%d, event=0x%x\n", pMsg->status, pMsg->event);
 
   switch (pMsg->event)
   {
     case GAP_MSG_EVENT:
-      SimplePeripheral_processGapMessage((gapEventHdr_t*) pMsg);
+      //multi_role_processRoleEvent((gapMultiRoleEvent_t *)pMsg);
+      multi_role_processGapMsg((gapEventHdr_t*) pMsg);
       break;
 
     case GATT_MSG_EVENT:
       // Process GATT message
-      safeToDealloc = SimplePeripheral_processGATTMsg((gattMsgEvent_t *)pMsg);
+      safeToDealloc = multi_role_processGATTMsg((gattMsgEvent_t *)pMsg);
       break;
 
     case HCI_GAP_EVENT_EVENT:
     {
       // Process HCI message
-      switch(pMsg->status)
+      switch (pMsg->status)
       {
         case HCI_COMMAND_COMPLETE_EVENT_CODE:
         // Process HCI Command Complete Events here
         {
-          SimplePeripheral_processCmdCompleteEvt((hciEvt_CmdComplete_t *) pMsg);
+          multi_role_processCmdCompleteEvt((hciEvt_CmdComplete_t *) pMsg);
           break;
         }
 
@@ -804,61 +995,69 @@ static uint8_t SimplePeripheral_processStackMsg(ICall_Hdr *pMsg)
 
         // HCI Commands Events
         case HCI_COMMAND_STATUS_EVENT_CODE:
-        {
-          hciEvt_CommandStatus_t *pMyMsg = (hciEvt_CommandStatus_t *)pMsg;
-          switch ( pMyMsg->cmdOpcode )
           {
-            case HCI_LE_SET_PHY:
+            hciEvt_CommandStatus_t *pMyMsg = (hciEvt_CommandStatus_t *)pMsg;
+            switch ( pMyMsg->cmdOpcode )
             {
-              if (pMyMsg->cmdStatus == HCI_ERROR_CODE_UNSUPPORTED_REMOTE_FEATURE)
-              {
-                Display_printf(dispHandle, SP_ROW_STATUS_1, 0,
-                        "PHY Change failure, peer does not support this");
-              }
-              else
-              {
-                Display_printf(dispHandle, SP_ROW_STATUS_1, 0,
-                               "PHY Update Status Event: 0x%x",
-                               pMyMsg->cmdStatus);
-              }
+              case HCI_LE_SET_PHY:
+                {
+                  if (pMyMsg->cmdStatus ==
+                      HCI_ERROR_CODE_UNSUPPORTED_REMOTE_FEATURE)
+                  {
+                    Display_printf(dispHandle, MR_ROW_CUR_CONN, 0,
+                            "PHY Change failure, peer does not support this");
+                  }
+                  else
+                  {
+                    Display_printf(dispHandle, MR_ROW_CUR_CONN, 0,
+                                   "PHY Update Status: 0x%02x",
+                                   pMyMsg->cmdStatus);
+                  }
+                }
+                multi_role_updatePHYStat(HCI_LE_SET_PHY, (uint8_t *)pMsg);
+                break;
+              case HCI_DISCONNECT:
+                break;
 
-              SimplePeripheral_updatePHYStat(HCI_LE_SET_PHY, (uint8_t *)pMsg);
+              default:
+                {
+                  Display_printf(dispHandle, MR_ROW_NON_CONN, 0,
+                                 "Unknown Cmd Status: 0x%04x::0x%02x",
+                                 pMyMsg->cmdOpcode, pMyMsg->cmdStatus);
+                }
               break;
             }
-
-            default:
-              break;
           }
           break;
-        }
 
         // LE Events
         case HCI_LE_EVENT_CODE:
         {
-          hciEvt_BLEPhyUpdateComplete_t *pPUC =
-            (hciEvt_BLEPhyUpdateComplete_t*) pMsg;
+          hciEvt_BLEPhyUpdateComplete_t *pPUC
+            = (hciEvt_BLEPhyUpdateComplete_t*) pMsg;
 
-          // A Phy Update Has Completed or Failed
           if (pPUC->BLEEventCode == HCI_BLE_PHY_UPDATE_COMPLETE_EVENT)
           {
             if (pPUC->status != SUCCESS)
             {
-              Display_printf(dispHandle, SP_ROW_STATUS_1, 0,
-                             "PHY Change failure");
+
+              Display_printf(dispHandle, MR_ROW_ANY_CONN, 0,
+                             "%s: PHY Change failure",
+                             multi_role_getConnAddrStr(pPUC->connHandle));
             }
             else
             {
+              Display_printf(dispHandle, MR_ROW_ANY_CONN, 0,
+                             "%s: PHY updated to %s",
+                             multi_role_getConnAddrStr(pPUC->connHandle),
               // Only symmetrical PHY is supported.
               // rxPhy should be equal to txPhy.
-              Display_printf(dispHandle, SP_ROW_STATUS_2, 0,
-                             "PHY Updated to %s",
-                             (pPUC->rxPhy == HCI_PHY_1_MBPS) ? "1M" :
-                             (pPUC->rxPhy == HCI_PHY_2_MBPS) ? "2M" :
-                              "CODED");
+                             (pPUC->rxPhy == PHY_UPDATE_COMPLETE_EVENT_1M) ? "1 Mbps" :
+                             (pPUC->rxPhy == PHY_UPDATE_COMPLETE_EVENT_2M) ? "2 Mbps" :
+                             (pPUC->rxPhy == PHY_UPDATE_COMPLETE_EVENT_CODED) ? "Coded" : "Unexpected PHY Value");
             }
-
-            SimplePeripheral_updatePHYStat(HCI_BLE_PHY_UPDATE_COMPLETE_EVENT, (uint8_t *)pMsg);
           }
+
           break;
         }
 
@@ -871,7 +1070,7 @@ static uint8_t SimplePeripheral_processStackMsg(ICall_Hdr *pMsg)
 
     case L2CAP_SIGNAL_EVENT:
       // Process L2CAP signal
-      safeToDealloc = SimplePeripheral_processL2CAPMsg((l2capSignalEvent_t *)pMsg);
+      safeToDealloc = multi_role_processL2CAPMsg((l2capSignalEvent_t *)pMsg);
       break;
 
     default:
@@ -883,13 +1082,13 @@ static uint8_t SimplePeripheral_processStackMsg(ICall_Hdr *pMsg)
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_processL2CAPMsg
+ * @fn      multi_role_processL2CAPMsg
  *
  * @brief   Process L2CAP messages and events.
  *
  * @return  TRUE if safe to deallocate incoming message, FALSE otherwise.
  */
-static uint8_t SimplePeripheral_processL2CAPMsg(l2capSignalEvent_t *pMsg)
+static uint8_t multi_role_processL2CAPMsg(l2capSignalEvent_t *pMsg)
 {
   uint8_t safeToDealloc = TRUE;
   static bool firstRun = TRUE;
@@ -914,7 +1113,7 @@ static uint8_t SimplePeripheral_processL2CAPMsg(l2capSignalEvent_t *pMsg)
         numPendingMsgs = MAX_NUM_PDU - pMsg->cmd.numCtrlDataPktEvt.numDataPkt;
 
         // Wait until all PDU have been sent on cxn events
-        Gap_RegisterConnEventCb(SimplePeripheral_connEvtCB,
+        Gap_RegisterConnEventCb(multi_role_connEvtCB,
                                   GAP_CB_REGISTER,
                                   GAP_CB_CONN_EVENT_ALL,
                                   resetConnHandle);
@@ -940,129 +1139,23 @@ static uint8_t SimplePeripheral_processL2CAPMsg(l2capSignalEvent_t *pMsg)
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_processGATTMsg
+ * @fn      multi_role_processGapMsg
  *
- * @brief   Process GATT messages and events.
+ * @brief   GAP message processing function.
  *
- * @return  TRUE if safe to deallocate incoming message, FALSE otherwise.
+ * @param   pMsg - pointer to event message structure
+ *
+ * @return  none
  */
-static uint8_t SimplePeripheral_processGATTMsg(gattMsgEvent_t *pMsg)
+static void multi_role_processGapMsg(gapEventHdr_t *pMsg)
 {
-  if (pMsg->method == ATT_FLOW_CTRL_VIOLATED_EVENT)
-  {
-    // ATT request-response or indication-confirmation flow control is
-    // violated. All subsequent ATT requests or indications will be dropped.
-    // The app is informed in case it wants to drop the connection.
-
-    // Display the opcode of the message that caused the violation.
-    Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "FC Violated: %d", pMsg->msg.flowCtrlEvt.opcode);
-  }
-  else if (pMsg->method == ATT_MTU_UPDATED_EVENT)
-  {
-    // MTU size updated
-    OAD_setBlockSize(pMsg->msg.mtuEvt.MTU);
-    Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "MTU Size: %d", pMsg->msg.mtuEvt.MTU);
-  }
-
-  // Free message payload. Needed only for ATT Protocol messages
-  GATT_bm_free(&pMsg->msg, pMsg->method);
-
-  // It's safe to free the incoming message
-  return (TRUE);
-}
-
-/*********************************************************************
- * @fn      SimplePeripheral_processAppMsg
- *
- * @brief   Process an incoming callback from a profile.
- *
- * @param   pMsg - message to process
- *
- * @return  None.
- */
-static void SimplePeripheral_processAppMsg(spEvt_t *pMsg)
-{
-  bool dealloc = TRUE;
-
-  switch (pMsg->event)
-  {
-    case SP_CHAR_CHANGE_EVT:
-      SimplePeripheral_processCharValueChangeEvt(*(uint8_t*)(pMsg->pData));
-      break;
-
-    case SP_KEY_CHANGE_EVT:
-      SimplePeripheral_handleKeys(*(uint8_t*)(pMsg->pData));
-      break;
-
-    case SP_ADV_EVT:
-      SimplePeripheral_processAdvEvent((spGapAdvEventData_t*)(pMsg->pData));
-      break;
-
-    case SP_PAIR_STATE_EVT:
-      SimplePeripheral_processPairState((spPairStateData_t*)(pMsg->pData));
-      break;
-
-    case SP_PASSCODE_EVT:
-      SimplePeripheral_processPasscode((spPasscodeData_t*)(pMsg->pData));
-      break;
-
-    case SP_PERIODIC_EVT:
-      SimplePeripheral_performPeriodicTask();
-      break;
-
-    case SP_READ_RPA_EVT:
-      SimplePeripheral_updateRPA();
-      break;
-
-    case SP_SEND_PARAM_UPDATE_EVT:
-    {
-      // Extract connection handle from data
-      uint16_t connHandle = *(uint16_t *)(((spClockEventData_t *)pMsg->pData)->data);
-
-      SimplePeripheral_processParamUpdate(connHandle);
-
-      // This data is not dynamically allocated
-      dealloc = FALSE;
-      break;
-    }
-
-    case SP_CONN_EVT:
-      SimplePeripheral_processConnEvt((Gap_ConnEventRpt_t *)(pMsg->pData));
-      break;
-
-    case SP_OAD_RESET_EVT:
-      SimplePeripheral_processOadResetEvt((oadResetWrite_t *)(pMsg->pData));
-      break;
-
-    default:
-      // Do nothing.
-      break;
-  }
-
-  // Free message data if it exists and we are to dealloc
-  if ((dealloc == TRUE) && (pMsg->pData != NULL))
-  {
-    ICall_free(pMsg->pData);
-  }
-}
-
-/*********************************************************************
- * @fn      SimplePeripheral_processGapMessage
- *
- * @brief   Process an incoming GAP event.
- *
- * @param   pMsg - message to process
- */
-static void SimplePeripheral_processGapMessage(gapEventHdr_t *pMsg)
-{
-  switch(pMsg->opcode)
+  switch (pMsg->opcode)
   {
     case GAP_DEVICE_INIT_DONE_EVENT:
     {
-      bStatus_t status = FAILURE;
-
       gapDeviceInitDoneEvent_t *pPkt = (gapDeviceInitDoneEvent_t *)pMsg;
 
+      BLE_LOG_INT_TIME(0, BLE_LOG_MODULE_APP, "APP : ---- got GAP_DEVICE_INIT_DONE_EVENT", 0);
       if(pPkt->hdr.status == SUCCESS)
       {
         // Store the system ID
@@ -1085,112 +1178,113 @@ static void SimplePeripheral_processGapMessage(gapEventHdr_t *pMsg)
         // Set Device Info Service Parameter
         DevInfo_SetParameter(DEVINFO_SYSTEM_ID, DEVINFO_SYSTEM_ID_LEN, systemId);
 
-        Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "Initialized");
+        BLE_LOG_INT_INT(0, BLE_LOG_MODULE_APP, "APP : ---- start advert %d,%d\n", 0, 0);
+        //Setup and start advertising
+        multi_role_advertInit();
 
-        // Setup and start Advertising
-        // For more information, see the GAP section in the User's Guide:
-        // http://software-dl.ti.com/lprf/ble5stack-latest/
-
-        // Create Advertisement set #1 and assign handle
-        status = GapAdv_create(&SimplePeripheral_advCallback, &advParams1,
-                               &advHandleLegacy);
-        SIMPLEPERIPHERAL_ASSERT(status == SUCCESS);
-
-        // Load advertising data for set #1 that is statically allocated by the app
-        status = GapAdv_loadByHandle(advHandleLegacy, GAP_ADV_DATA_TYPE_ADV,
-                                     sizeof(advData1), advData1);
-        SIMPLEPERIPHERAL_ASSERT(status == SUCCESS);
-
-        // Load scan response data for set #1 that is statically allocated by the app
-        status = GapAdv_loadByHandle(advHandleLegacy, GAP_ADV_DATA_TYPE_SCAN_RSP,
-                                     sizeof(scanResData1), scanResData1);
-        SIMPLEPERIPHERAL_ASSERT(status == SUCCESS);
-
-        // Set event mask for set #1
-        status = GapAdv_setEventMask(advHandleLegacy,
-                                     GAP_ADV_EVT_MASK_START_AFTER_ENABLE |
-                                     GAP_ADV_EVT_MASK_END_AFTER_DISABLE |
-                                     GAP_ADV_EVT_MASK_SET_TERMINATED);
-
-        // Enable legacy advertising for set #1
-        status = GapAdv_enable(advHandleLegacy, GAP_ADV_ENABLE_OPTIONS_USE_MAX , 0);
-        SIMPLEPERIPHERAL_ASSERT(status == SUCCESS);
-
-        // Create Advertisement set #2 and assign handle
-        status = GapAdv_create(&SimplePeripheral_advCallback, &advParams2,
-                               &advHandleLongRange);
-        SIMPLEPERIPHERAL_ASSERT(status == SUCCESS);
-
-        // Load advertising data for set #2 that is statically allocated by the app
-        status = GapAdv_loadByHandle(advHandleLongRange, GAP_ADV_DATA_TYPE_ADV,
-                                     sizeof(advData2), advData2);
-        SIMPLEPERIPHERAL_ASSERT(status == SUCCESS);
-
-        // Set event mask for set #2
-        status = GapAdv_setEventMask(advHandleLongRange,
-                                     GAP_ADV_EVT_MASK_START_AFTER_ENABLE |
-                                     GAP_ADV_EVT_MASK_END_AFTER_DISABLE |
-                                     GAP_ADV_EVT_MASK_SET_TERMINATED);
-
-        // Enable long range advertising for set #2
-        status = GapAdv_enable(advHandleLongRange, GAP_ADV_ENABLE_OPTIONS_USE_MAX , 0);
-        SIMPLEPERIPHERAL_ASSERT(status == SUCCESS);
-
-        // Display device address
-        Display_printf(dispHandle, SP_ROW_IDA, 0, "%s Addr: %s",
-                       (addrMode <= ADDRMODE_RANDOM) ? "Dev" : "ID",
-                       Util_convertBdAddr2Str(pPkt->devAddr));
-
-        if (addrMode > ADDRMODE_RANDOM)
-        {
-          SimplePeripheral_updateRPA();
-
-          // Create one-shot clock for RPA check event.
-          Util_constructClock(&clkRpaRead, SimplePeripheral_clockHandler,
-                              READ_RPA_PERIOD, 0, true,
-                              (UArg) &argRpaRead);
-        }
       }
+
+      //Setup scanning
+      multi_role_scanInit();
+
+      mrMaxPduSize = pPkt->dataPktLen;
+
+      // Enable "Discover Devices", "Set Scanning PHY", and "Set Address Type"
+      // in the main menu
+      tbm_setItemStatus(&mrMenuMain, MR_ITEM_STARTDISC | MR_ITEM_ADVERTISE | MR_ITEM_PHY, MR_ITEM_NONE);
+
+      //Display initialized state status
+      Display_printf(dispHandle, MR_ROW_NUM_CONN, 0, "Num Conns: %d", numConn);
+      Display_printf(dispHandle, MR_ROW_NON_CONN, 0, "Initialized");
+      Display_printf(dispHandle, MR_ROW_MYADDRSS, 0, "Multi-Role Address: %s",(char *)Util_convertBdAddr2Str(pPkt->devAddr));
+
+      break;
+    }
+
+    case GAP_CONNECTING_CANCELLED_EVENT:
+    {
+      uint16_t itemsToEnable = MR_ITEM_STARTDISC| MR_ITEM_ADVERTISE | MR_ITEM_PHY;
+
+      if (numConn > 0)
+      {
+        itemsToEnable |= MR_ITEM_SELECTCONN;
+      }
+
+      Display_printf(dispHandle, MR_ROW_NON_CONN, 0,
+                     "Conneting attempt cancelled");
+
+      // Enable "Discover Devices", "Connect To", and "Set Scanning PHY"
+      // and disable everything else.
+      tbm_setItemStatus(&mrMenuMain,
+                        itemsToEnable, MR_ITEM_ALL & ~itemsToEnable);
 
       break;
     }
 
     case GAP_LINK_ESTABLISHED_EVENT:
     {
-      gapEstLinkReqEvent_t *pPkt = (gapEstLinkReqEvent_t *)pMsg;
+      uint16_t connHandle = ((gapEstLinkReqEvent_t*) pMsg)->connectionHandle;
+      uint8_t role = ((gapEstLinkReqEvent_t*) pMsg)->connRole;
+      uint8_t* pAddr      = ((gapEstLinkReqEvent_t*) pMsg)->devAddr;
+      uint8_t  connIndex;
+      uint32_t itemsToDisable = MR_ITEM_STOPDISC | MR_ITEM_CANCELCONN;
+      uint8_t* pStrAddr;
+      uint8_t i;
+      uint8_t numConnectable = 0;
 
-      // Display the amount of current connections
-      uint8_t numActive = linkDB_NumActive();
-      Display_printf(dispHandle, SP_ROW_STATUS_2, 0, "Num Conns: %d",
-                     (uint16_t)numActive);
+      BLE_LOG_INT_TIME(0, BLE_LOG_MODULE_APP, "APP : ---- got GAP_LINK_ESTABLISHED_EVENT", 0);
+      // Add this connection info to the list
+      connIndex = multi_role_addConnInfo(connHandle, pAddr, role);
 
-      if (pPkt->hdr.status == SUCCESS)
+      // connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
+      MULTIROLE_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
+
+      connList[connIndex].charHandle = 0;
+
+      Util_startClock(&clkPeriodic);
+
+      pStrAddr = (uint8_t*) Util_convertBdAddr2Str(connList[connIndex].addr);
+
+      Display_printf(dispHandle, MR_ROW_NON_CONN, 0, "Connected to %s", pStrAddr);
+      Display_printf(dispHandle, MR_ROW_NUM_CONN, 0, "Num Conns: %d", numConn);
+
+      // Disable "Connect To" until another discovery is performed
+      itemsToDisable |= MR_ITEM_CONNECT;
+
+      // If we already have maximum allowed number of connections,
+      // disable device discovery and additional connection making.
+      if (numConn >= MAX_NUM_BLE_CONNS)
       {
-        // Add connection to list and start RSSI
-        SimplePeripheral_addConn(pPkt->connectionHandle);
-
-        // Display the address of this connection
-        Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "Connected to %s",
-                       Util_convertBdAddr2Str(pPkt->devAddr));
-
-        // Enable connection selection option
-        tbm_setItemStatus(&spMenuMain, SP_ITEM_SELECT_CONN, TBM_ITEM_NONE);
-
-        // Start Periodic Clock.
-        Util_startClock(&clkPeriodic);
+        itemsToDisable |= MR_ITEM_STARTDISC;
       }
 
-      if (numActive < MAX_NUM_BLE_CONNS)
+      for (i = 0; i < TBM_GET_NUM_ITEM(&mrMenuConnect); i++)
+      {
+        if (!memcmp(TBM_GET_ACTION_DESC(&mrMenuConnect, i), pStrAddr,
+            MR_ADDR_STR_SIZE))
+        {
+          // Disable this device from the connection choices
+          tbm_setItemStatus(&mrMenuConnect, MR_ITEM_NONE, 1 << i);
+        }
+        else if (TBM_IS_ITEM_ACTIVE(&mrMenuConnect, i))
+        {
+          numConnectable++;
+        }
+      }
+
+      // Enable/disable Main menu items properly
+      tbm_setItemStatus(&mrMenuMain,
+                        MR_ITEM_ALL & ~(itemsToDisable), itemsToDisable);
+
+      if (numConn < MAX_NUM_BLE_CONNS)
       {
         // Start advertising since there is room for more connections
-        GapAdv_enable(advHandleLegacy, GAP_ADV_ENABLE_OPTIONS_USE_MAX , 0);
-        GapAdv_enable(advHandleLongRange, GAP_ADV_ENABLE_OPTIONS_USE_MAX , 0);
+        GapAdv_enable(advHandle, GAP_ADV_ENABLE_OPTIONS_USE_MAX, 0);
       }
       else
       {
         // Stop advertising since there is no room for more connections
-        GapAdv_disable(advHandleLongRange, GAP_ADV_ENABLE_OPTIONS_USE_MAX , 0);
-        GapAdv_disable(advHandleLegacy, GAP_ADV_ENABLE_OPTIONS_USE_MAX , 0);
+        GapAdv_disable(advHandle);
       }
 
       break;
@@ -1198,37 +1292,69 @@ static void SimplePeripheral_processGapMessage(gapEventHdr_t *pMsg)
 
     case GAP_LINK_TERMINATED_EVENT:
     {
-      gapTerminateLinkEvent_t *pPkt = (gapTerminateLinkEvent_t *)pMsg;
+      uint16_t connHandle = ((gapTerminateLinkEvent_t*) pMsg)->connectionHandle;
+      uint8_t connIndex;
+      uint32_t itemsToEnable = MR_ITEM_STARTDISC | MR_ITEM_ADVERTISE | MR_ITEM_PHY;
+      uint8_t* pStrAddr;
+      uint8_t i;
+      uint8_t numConnectable = 0;
 
-      // Display the amount of current connections
-      uint8_t numActive = linkDB_NumActive();
-      Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "Device Disconnected!");
-      Display_printf(dispHandle, SP_ROW_STATUS_2, 0, "Num Conns: %d",
-                     (uint16_t)numActive);
+      BLE_LOG_INT_STR(0, BLE_LOG_MODULE_APP, "APP : GAP msg: status=%d, opcode=%s\n", 0, "GAP_LINK_TERMINATED_EVENT");
+      // Mark this connection deleted in the connected device list.
+      connIndex = multi_role_removeConnInfo(connHandle);
 
-      // Remove the connection from the list and disable RSSI if needed
-      SimplePeripheral_removeConn(pPkt->connectionHandle);
+      // connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
+      MULTIROLE_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
 
-      // If no active connections
-      if (numActive == 0)
+      pStrAddr = (uint8_t*) Util_convertBdAddr2Str(connList[connIndex].addr);
+
+      Display_printf(dispHandle, MR_ROW_NON_CONN, 0, "%s is disconnected",
+                     pStrAddr);
+      Display_printf(dispHandle, MR_ROW_NUM_CONN, 0, "Num Conns: %d", numConn);
+
+      for (i = 0; i < TBM_GET_NUM_ITEM(&mrMenuConnect); i++)
       {
-        // Stop periodic clock
-        Util_stopClock(&clkPeriodic);
+        if (!memcmp(TBM_GET_ACTION_DESC(&mrMenuConnect, i), pStrAddr,
+                     MR_ADDR_STR_SIZE))
+        {
+          // Enable this device in the connection choices
+          tbm_setItemStatus(&mrMenuConnect, 1 << i, MR_ITEM_NONE);
+        }
 
-        // Disable Connection Selection option
-        tbm_setItemStatus(&spMenuMain, TBM_ITEM_NONE, SP_ITEM_SELECT_CONN);
+        if (TBM_IS_ITEM_ACTIVE(&mrMenuConnect, i))
+        {
+          numConnectable++;
+        }
       }
 
       // Start advertising since there is room for more connections
-      GapAdv_enable(advHandleLegacy, GAP_ADV_ENABLE_OPTIONS_USE_MAX , 0);
-      GapAdv_enable(advHandleLongRange, GAP_ADV_ENABLE_OPTIONS_USE_MAX , 0);
+      GapAdv_enable(advHandle, GAP_ADV_ENABLE_OPTIONS_USE_MAX , 0);
 
-      // Clear remaining lines
-      Display_clearLine(dispHandle, SP_ROW_CONNECTION);
+      if (numConn > 0)
+      {
+        // There still is an active connection to select
+        itemsToEnable |= MR_ITEM_SELECTCONN;
+      }
 
-      // Cancel the OAD if one is going on
-      // A disconnect forces the peer to re-identify
-      //OAD_cancel(); //ToDo: Remove: PK
+      // If no active connections
+      if (numConn == 0)
+      {
+        // Stop periodic clock
+        Util_stopClock(&clkPeriodic);
+        tbm_setItemStatus(&mrMenuMain, TBM_ITEM_NONE, TBM_ITEM_ALL);
+        tbm_setItemStatus(&mrMenuMain, MR_ITEM_NONE, MR_ITEM_ALL ^(MR_ITEM_STARTDISC | MR_ITEM_ADVERTISE | MR_ITEM_PHY));
+      }
+
+      // Enable/disable items properly.
+      tbm_setItemStatus(&mrMenuMain,
+                        itemsToEnable, MR_ITEM_ALL & ~itemsToEnable);
+
+      // If we are in the context which the teminated connection was associated
+      // with, go to main menu.
+      if (connHandle == mrConnHandle)
+      {
+        tbm_goTo(&mrMenuMain);
+      }
 
       break;
     }
@@ -1262,381 +1388,603 @@ static void SimplePeripheral_processGapMessage(gapEventHdr_t *pMsg)
       break;
     }
 
-    case GAP_LINK_PARAM_UPDATE_EVENT:
-    {
-      gapLinkUpdateEvent_t *pPkt = (gapLinkUpdateEvent_t *)pMsg;
-
-      // Get the address from the connection handle
-      linkDBInfo_t linkInfo;
-      linkDB_GetInfo(pPkt->connectionHandle, &linkInfo);
-
-      if(pPkt->status == SUCCESS)
+     case GAP_LINK_PARAM_UPDATE_EVENT:
       {
-        // Display the address of the connection update
-        Display_printf(dispHandle, SP_ROW_STATUS_2, 0, "Link Param Updated: %s",
-                       Util_convertBdAddr2Str(linkInfo.addr));
-      }
-      else
-      {
-        // Display the address of the connection update failure
-        Display_printf(dispHandle, SP_ROW_STATUS_2, 0,
-                       "Link Param Update Failed 0x%x: %s", pPkt->opcode,
-                       Util_convertBdAddr2Str(linkInfo.addr));
-      }
+        gapLinkUpdateEvent_t *pPkt = (gapLinkUpdateEvent_t *)pMsg;
 
-      // Check if there are any queued parameter updates
-      spConnHandleEntry_t *connHandleEntry = (spConnHandleEntry_t *)List_get(&paramUpdateList);
-      if (connHandleEntry != NULL)
-      {
-        // Attempt to send queued update now
-        SimplePeripheral_processParamUpdate(connHandleEntry->connHandle);
+        // Get the address from the connection handle
+        linkDBInfo_t linkInfo;
+        if (linkDB_GetInfo(pPkt->connectionHandle, &linkInfo) ==  SUCCESS)
+        {
 
-        // Free list element
-        ICall_free(connHandleEntry);
+          if(pPkt->status == SUCCESS)
+          {
+            Display_printf(dispHandle, MR_ROW_CUR_CONN, 0,
+                          "Updated: %s, connTimeout:%d",
+                           Util_convertBdAddr2Str(linkInfo.addr),
+                           linkInfo.connTimeout*CONN_TIMEOUT_MS_CONVERSION);
+          }
+          else
+          {
+            // Display the address of the connection update failure
+            Display_printf(dispHandle, MR_ROW_CUR_CONN, 0,
+                           "Update Failed 0x%h: %s", pPkt->opcode,
+                           Util_convertBdAddr2Str(linkInfo.addr));
+          }
+        }
+        // Check if there are any queued parameter updates
+        mrConnHandleEntry_t *connHandleEntry = (mrConnHandleEntry_t *)List_get(&paramUpdateList);
+        if (connHandleEntry != NULL)
+        {
+          // Attempt to send queued update now
+          multi_role_processParamUpdate(connHandleEntry->connHandle);
+
+          // Free list element
+          ICall_free(connHandleEntry);
+        }
+        break;
       }
-
-      break;
-    }
 
 #if defined ( NOTIFY_PARAM_UPDATE_RJCT )
-    case GAP_LINK_PARAM_UPDATE_REJECT_EVENT:
-    {
-      linkDBInfo_t linkInfo;
-      gapLinkUpdateEvent_t *pPkt = (gapLinkUpdateEvent_t *)pMsg;
+     case GAP_LINK_PARAM_UPDATE_REJECT_EVENT:
+     {
+       linkDBInfo_t linkInfo;
+       gapLinkUpdateEvent_t *pPkt = (gapLinkUpdateEvent_t *)pMsg;
 
-      // Get the address from the connection handle
-      linkDB_GetInfo(pPkt->connectionHandle, &linkInfo);
+       // Get the address from the connection handle
+       linkDB_GetInfo(pPkt->connectionHandle, &linkInfo);
 
-      // Display the address of the connection update failure
-      Display_printf(dispHandle, SP_ROW_STATUS_2, 0,
-                     "Peer Device's Update Request Rejected 0x%x: %s", pPkt->opcode,
-                     Util_convertBdAddr2Str(linkInfo.addr));
+       // Display the address of the connection update failure
+       Display_printf(dispHandle, MR_ROW_CUR_CONN, 0,
+                      "Peer Device's Update Request Rejected 0x%h: %s", pPkt->opcode,
+                      Util_convertBdAddr2Str(linkInfo.addr));
 
-      break;
-    }
+       break;
+     }
 #endif
-    default:
-      Display_clearLines(dispHandle, SP_ROW_STATUS_1, SP_ROW_STATUS_2);
-      break;
-  }
-}
-
-/*********************************************************************
- * @fn      SimplePeripheral_charValueChangeCB
- *
- * @brief   Callback from Simple Profile indicating a characteristic
- *          value change.
- *
- * @param   paramId - parameter Id of the value that was changed.
- *
- * @return  None.
- */
-static void SimplePeripheral_charValueChangeCB(uint8_t paramId)
-{
-  uint8_t *pValue = ICall_malloc(sizeof(uint8_t));
-
-  if (pValue)
-  {
-    *pValue = paramId;
-
-    if (SimplePeripheral_enqueueMsg(SP_CHAR_CHANGE_EVT, pValue) != SUCCESS)
-    {
-      ICall_freeMsg(pValue);
-    }
-  }
-}
-
-/*********************************************************************
- * @fn      SimplePeripheral_processOadWriteCB
- *
- * @brief   Process a write request to the OAD reset service
- *
- * @param   connHandle - the connection Handle this request is from.
- * @param   bim_var    - bim_var to set before resetting.
- *
- * @return  None.
- */
-void SimplePeripheral_processOadWriteCB(uint8_t event, uint16_t arg)
-{
-  Event_post(syncEvent, event);
-}
-
-/*********************************************************************
- * @fn      SimplePeripheral_processCharValueChangeEvt
- *
- * @brief   Process a pending Simple Profile characteristic value change
- *          event.
- *
- * @param   paramID - parameter ID of the value that was changed.
- */
-static void SimplePeripheral_processCharValueChangeEvt(uint8_t paramId)
-{
-  uint8_t newValue;
-
-  switch(paramId)
-  {
-    case SIMPLEPROFILE_CHAR1:
-      SimpleProfile_GetParameter(SIMPLEPROFILE_CHAR1, &newValue);
-
-      Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "Char 1: %d", (uint16_t)newValue);
-      break;
-
-    case SIMPLEPROFILE_CHAR3:
-      SimpleProfile_GetParameter(SIMPLEPROFILE_CHAR3, &newValue);
-
-      Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "Char 3: %d", (uint16_t)newValue);
-      break;
 
     default:
-      // should not reach here!
       break;
   }
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_performPeriodicTask
- *
- * @brief   Perform a periodic application task. This function gets called
- *          every five seconds (SP_PERIODIC_EVT_PERIOD). In this example,
- *          the value of the third characteristic in the SimpleGATTProfile
- *          service is retrieved from the profile, and then copied into the
- *          value of the the fourth characteristic.
- *
- * @param   None.
- *
- * @return  None.
- */
-static void SimplePeripheral_performPeriodicTask(void)
+* @fn      multi_role_scanInit
+*
+* @brief   Setup initial device scan settings.
+*
+* @return  None.
+*/
+static void multi_role_scanInit(void)
 {
-  uint8_t valueToCopy;
+  uint8_t temp8;
+  uint16_t temp16;
 
-  // Call to retrieve the value of the third characteristic in the profile
-  if (SimpleProfile_GetParameter(SIMPLEPROFILE_CHAR3, &valueToCopy) == SUCCESS)
+  // Setup scanning
+  // For more information, see the GAP section in the User's Guide:
+  // http://software-dl.ti.com/lprf/ble5stack-latest/
+
+  // Register callback to process Scanner events
+  GapScan_registerCb(multi_role_scanCB, NULL);
+
+  // Set Scanner Event Mask
+  GapScan_setEventMask(GAP_EVT_SCAN_ENABLED | GAP_EVT_SCAN_DISABLED |
+                       GAP_EVT_ADV_REPORT);
+
+  // Set Scan PHY parameters
+  GapScan_setPhyParams(DEFAULT_SCAN_PHY, DEFAULT_SCAN_TYPE,
+                       DEFAULT_SCAN_INTERVAL, DEFAULT_SCAN_WINDOW);
+
+  // Set Advertising report fields to keep
+  temp16 = ADV_RPT_FIELDS;
+  GapScan_setParam(SCAN_PARAM_RPT_FIELDS, &temp16);
+  // Set Scanning Primary PHY
+  temp8 = DEFAULT_SCAN_PHY;
+  GapScan_setParam(SCAN_PARAM_PRIM_PHYS, &temp8);
+  // Set LL Duplicate Filter
+  temp8 = SCANNER_DUPLICATE_FILTER;
+  GapScan_setParam(SCAN_PARAM_FLT_DUP, &temp8);
+
+  // Set PDU type filter -
+  // Only 'Connectable' and 'Complete' packets are desired.
+  // It doesn't matter if received packets are
+  // whether Scannable or Non-Scannable, whether Directed or Undirected,
+  // whether Scan_Rsp's or Advertisements, and whether Legacy or Extended.
+  temp16 = SCAN_FLT_PDU_CONNECTABLE_ONLY | SCAN_FLT_PDU_COMPLETE_ONLY;
+  GapScan_setParam(SCAN_PARAM_FLT_PDU_TYPE, &temp16);
+
+  // Set initiating PHY parameters
+  GapInit_setPhyParam(DEFAULT_INIT_PHY, INIT_PHYPARAM_CONN_INT_MIN,
+					  INIT_PHYPARAM_MIN_CONN_INT);
+  GapInit_setPhyParam(DEFAULT_INIT_PHY, INIT_PHYPARAM_CONN_INT_MAX,
+					  INIT_PHYPARAM_MAX_CONN_INT);
+}
+
+/*********************************************************************
+* @fn      multi_role_advertInit
+*
+* @brief   Setup initial advertisment and start advertising from device init.
+*
+* @return  None.
+*/
+static void multi_role_advertInit(void)
+{
+  uint8_t status = FAILURE;
+  // Setup and start Advertising
+  // For more information, see the GAP section in the User's Guide:
+  // http://software-dl.ti.com/lprf/ble5stack-latest/
+
+
+  BLE_LOG_INT_INT(0, BLE_LOG_MODULE_APP, "APP : ---- call GapAdv_create set=%d,%d\n", 1, 0);
+  // Create Advertisement set #1 and assign handle
+  GapAdv_create(&multi_role_advCB, &advParams1,
+                &advHandle);
+
+  // Load advertising data for set #1 that is statically allocated by the app
+  GapAdv_loadByHandle(advHandle, GAP_ADV_DATA_TYPE_ADV,
+                      sizeof(advData1), advData1);
+
+  // Load scan response data for set #1 that is statically allocated by the app
+  GapAdv_loadByHandle(advHandle, GAP_ADV_DATA_TYPE_SCAN_RSP,
+                      sizeof(scanResData1), scanResData1);
+
+  // Set event mask for set #1
+  GapAdv_setEventMask(advHandle,
+                      GAP_ADV_EVT_MASK_START_AFTER_ENABLE |
+                      GAP_ADV_EVT_MASK_END_AFTER_DISABLE |
+                      GAP_ADV_EVT_MASK_SET_TERMINATED);
+
+  BLE_LOG_INT_TIME(0, BLE_LOG_MODULE_APP, "APP : ---- GapAdv_enable", 0);
+  // Enable legacy advertising for set #1
+  status = GapAdv_enable(advHandle, GAP_ADV_ENABLE_OPTIONS_USE_MAX , 0);
+
+  if(status != SUCCESS)
   {
-    // Call to set that value of the fourth characteristic in the profile.
-    // Note that if notifications of the fourth characteristic have been
-    // enabled by a GATT client device, then a notification will be sent
-    // every time this function is called.
-    SimpleProfile_SetParameter(SIMPLEPROFILE_CHAR4, sizeof(uint8_t),
-                               &valueToCopy);
+    mrIsAdvertising = false;
+    Display_printf(dispHandle, MR_ROW_ADVERTIS, 0, "Error: Failed to Start Advertising!");
+  }
+
+  if (addrMode > ADDRMODE_RANDOM)
+  {
+    multi_role_updateRPA();
+#ifdef FREERTOS
+    // Create one-shot clock for RPA check event.
+    Util_constructClock(&clkRpaRead, (void*)multi_role_clockHandler,
+                        READ_RPA_PERIOD, 0, true,
+                        (void*) &argRpaRead);
+
+#else
+    // Create one-shot clock for RPA check event.
+    Util_constructClock(&clkRpaRead, multi_role_clockHandler,
+                        READ_RPA_PERIOD, 0, true,
+                        (UArg) &argRpaRead);
+#endif
   }
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_updateRPA
- *
- * @brief   Read the current RPA from the stack and update display
- *          if the RPA has changed.
- *
- * @param   None.
- *
- * @return  None.
- */
-static void SimplePeripheral_updateRPA(void)
-{
-  // Read the current RPA.
-  // The parameters for the call to HCI_LE_ReadLocalResolvableAddressCmd
-  // are not needed to be accurate to retrieve the local resolvable address.
-  // The 1st parameter can be any of ADDRMODE_PUBLIC and ADDRMODE_RANDOM.
-  // The 2nd parameter only has to be not NULL.
-  // The result will come with HCI_LE_READ_LOCAL_RESOLVABLE_ADDRESS
-  // complete event.
-  HCI_LE_ReadLocalResolvableAddressCmd(0, rpa);
-}
-
-/*********************************************************************
- * @fn      SimplePeripheral_clockHandler
- *
- * @brief   Handler function for clock timeouts.
- *
- * @param   arg - event type
- *
- * @return  None.
- */
-static void SimplePeripheral_clockHandler(UArg arg)
-{
-  spClockEventData_t *pData = (spClockEventData_t *)arg;
-
-  if (pData->event == SP_PERIODIC_EVT)
-  {
-    // Start the next period
-    Util_startClock(&clkPeriodic);
-
-    // Post event to wake up the application
-    SimplePeripheral_enqueueMsg(SP_PERIODIC_EVT, NULL);
-  }
-  else if (pData->event == SP_READ_RPA_EVT)
-  {
-    // Start the next period
-    Util_startClock(&clkRpaRead);
-
-    // Post event to read the current RPA
-    SimplePeripheral_enqueueMsg(SP_READ_RPA_EVT, NULL);
-  }
-  else if (pData->event == SP_SEND_PARAM_UPDATE_EVT)
-  {
-    // Send message to app
-    SimplePeripheral_enqueueMsg(SP_SEND_PARAM_UPDATE_EVT, pData);
-  }
-}
-
-/*********************************************************************
- * @fn      SimplePeripheral_keyChangeHandler
- *
- * @brief   Key event handler function
- *
- * @param   keys - bitmap of pressed keys
- *
- * @return  none
- */
-static void SimplePeripheral_keyChangeHandler(uint8_t keys)
-{
-  uint8_t *pValue = ICall_malloc(sizeof(uint8_t));
-
-  if (pValue)
-  {
-    *pValue = keys;
-
-    if(SimplePeripheral_enqueueMsg(SP_KEY_CHANGE_EVT, pValue) != SUCCESS)
-    {
-      ICall_freeMsg(pValue);
-    }
-  }
-}
-
-/*********************************************************************
- * @fn      SimplePeripheral_handleKeys
- *
- * @brief   Handles all key events for this device.
- *
- * @param   keys - bit field for key events. Valid entries:
- *                 KEY_LEFT
- *                 KEY_RIGHT
- */
-static void SimplePeripheral_handleKeys(uint8_t keys)
-{
-  if (keys & KEY_LEFT)
-  {
-    // Check if the key is still pressed. Workaround for possible bouncing.
-    if (GPIO_read(CONFIG_GPIO_BTN1) == 0)
-    {
-      tbm_buttonLeft();
-    }
-  }
-  else if (keys & KEY_RIGHT)
-  {
-    // Check if the key is still pressed. Workaround for possible bouncing.
-    if (GPIO_read(CONFIG_GPIO_BTN2) == 0)
-    {
-      tbm_buttonRight();
-    }
-  }
-}
-
-/*********************************************************************
- * @fn      SimplePeripheral_doSetConnPhy
- *
- * @brief   Set PHY preference.
- *
- * @param   index - 0: 1M PHY
- *                  1: 2M PHY
- *                  2: 1M + 2M PHY
- *                  3: CODED PHY (Long range)
- *                  4: 1M + 2M + CODED PHY
- *
- * @return  always true
- */
-bool SimplePeripheral_doSetConnPhy(uint8 index)
-{
-  bool status = TRUE;
-
-  static uint8_t phy[] = {
-    HCI_PHY_1_MBPS, HCI_PHY_2_MBPS, HCI_PHY_1_MBPS | HCI_PHY_2_MBPS,
-    HCI_PHY_CODED, HCI_PHY_1_MBPS | HCI_PHY_2_MBPS | HCI_PHY_CODED,
-    AUTO_PHY_UPDATE
-  };
-
-  uint8_t connIndex = SimplePeripheral_getConnIndex(menuConnHandle);
-  SIMPLEPERIPHERAL_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
-
-  // Set Phy Preference on the current connection. Apply the same value
-  // for RX and TX.
-  // If auto PHY update is not selected and if auto PHY update is enabled, then
-  // stop auto PHY update
-  // Note PHYs are already enabled by default in build_config.opt in stack project.
-  if(phy[index] != AUTO_PHY_UPDATE)
-  {
-    // Cancel RSSI reading  and auto phy changing
-    SimplePeripheral_stopAutoPhyChange(connList[connIndex].connHandle);
-
-    SimplePeripheral_setPhy(menuConnHandle, 0, phy[index], phy[index], 0);
-
-    Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "PHY preference: %s",
-                   TBM_GET_ACTION_DESC(&spMenuConnPhy, index));
-  }
-  else
-  {
-    // Start RSSI read for auto PHY update (if it is disabled)
-    SimplePeripheral_startAutoPhyChange(menuConnHandle);
-  }
-
-  return status;
-}
-/*********************************************************************
- * @fn      SimplePeripheral_advCallback
+ * @fn      multi_role_advCB
  *
  * @brief   GapAdv module callback
  *
  * @param   pMsg - message to process
  */
-static void SimplePeripheral_advCallback(uint32_t event, void *pBuf, uintptr_t arg)
+static void multi_role_advCB(uint32_t event, void *pBuf, uintptr_t arg)
 {
-  spGapAdvEventData_t *pData = ICall_malloc(sizeof(spGapAdvEventData_t));
+  mrGapAdvEventData_t *pData = ICall_malloc(sizeof(mrGapAdvEventData_t));
 
   if (pData)
   {
     pData->event = event;
     pData->pBuf = pBuf;
 
-    if(SimplePeripheral_enqueueMsg(SP_ADV_EVT, pData) != SUCCESS)
+    if(multi_role_enqueueMsg(MR_EVT_ADV, pData) != SUCCESS)
     {
-      ICall_freeMsg(pData);
+      ICall_free(pData);
+    }
+  }
+}
+
+
+/*********************************************************************
+* @fn      multi_role_processGATTMsg
+*
+* @brief   Process GATT messages and events.
+*
+* @return  TRUE if safe to deallocate incoming message, FALSE otherwise.
+*/
+static uint8_t multi_role_processGATTMsg(gattMsgEvent_t *pMsg)
+{
+  // Get connection index from handle
+  uint8_t connIndex = multi_role_getConnIndex(pMsg->connHandle);
+  MULTIROLE_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
+
+  if (pMsg->method == ATT_FLOW_CTRL_VIOLATED_EVENT)
+  {
+    // ATT request-response or indication-confirmation flow control is
+    // violated. All subsequent ATT requests or indications will be dropped.
+    // The app is informed in case it wants to drop the connection.
+
+    // Display the opcode of the message that caused the violation.
+    Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "FC Violated: %d", pMsg->msg.flowCtrlEvt.opcode);
+  }
+  else if (pMsg->method == ATT_MTU_UPDATED_EVENT)
+  {
+    // MTU size updated
+    OAD_setBlockSize(pMsg->msg.mtuEvt.MTU);
+    Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "MTU Size: %d", pMsg->msg.mtuEvt.MTU);
+  }
+
+
+  // Messages from GATT server
+  if (linkDB_Up(pMsg->connHandle))
+  {
+    if ((pMsg->method == ATT_READ_RSP)   ||
+        ((pMsg->method == ATT_ERROR_RSP) &&
+         (pMsg->msg.errorRsp.reqOpcode == ATT_READ_REQ)))
+    {
+      if (pMsg->method == ATT_ERROR_RSP)
+      {
+        Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Read Error %d", pMsg->msg.errorRsp.errCode);
+      }
+      else
+      {
+        // After a successful read, display the read value
+        Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Read rsp: %d", pMsg->msg.readRsp.pValue[0]);
+      }
+
+    }
+    else if ((pMsg->method == ATT_WRITE_RSP)  ||
+             ((pMsg->method == ATT_ERROR_RSP) &&
+              (pMsg->msg.errorRsp.reqOpcode == ATT_WRITE_REQ)))
+    {
+
+      if (pMsg->method == ATT_ERROR_RSP)
+      {
+        Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Write Error %d", pMsg->msg.errorRsp.errCode);
+      }
+      else
+      {
+        // After a succesful write, display the value that was written and
+        // increment value
+        Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Write sent: %d", charVal);
+      }
+
+      tbm_goTo(&mrMenuPerConn);
+    }
+    else if (connList[connIndex].discState != BLE_DISC_STATE_IDLE)
+    {
+      multi_role_processGATTDiscEvent(pMsg);
+    }
+  } // Else - in case a GATT message came after a connection has dropped, ignore it.
+
+  // Free message payload. Needed only for ATT Protocol messages
+  GATT_bm_free(&pMsg->msg, pMsg->method);
+
+  // It's safe to free the incoming message
+  return (TRUE);
+}
+
+/*********************************************************************
+ * @fn		multi_role_processParamUpdate
+ *
+ * @brief	Process connection parameters update
+ *
+ * @param	connHandle - connection handle to update
+ *
+ * @return	None.
+ */
+static void multi_role_processParamUpdate(uint16_t connHandle)
+{
+  gapUpdateLinkParamReq_t req;
+  uint8_t connIndex;
+
+  req.connectionHandle = connHandle;
+#ifdef DEFAULT_SEND_PARAM_UPDATE_REQ
+  req.connLatency = DEFAULT_DESIRED_SLAVE_LATENCY;
+  req.connTimeout = DEFAULT_DESIRED_CONN_TIMEOUT;
+  req.intervalMin = DEFAULT_DESIRED_MIN_CONN_INTERVAL;
+  req.intervalMax = DEFAULT_DESIRED_MAX_CONN_INTERVAL;
+#endif
+
+  connIndex = multi_role_getConnIndex(connHandle);
+  MULTIROLE_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
+
+  // Deconstruct the clock object
+  Clock_destruct(connList[connIndex].pUpdateClock);
+  // Free clock struct, only in case it is not NULL
+  if (connList[connIndex].pUpdateClock != NULL)
+  {
+	ICall_free(connList[connIndex].pUpdateClock);
+	connList[connIndex].pUpdateClock = NULL;
+  }
+  // Free ParamUpdateEventData, only in case it is not NULL
+  if (connList[connIndex].pParamUpdateEventData != NULL)
+  {
+    ICall_free(connList[connIndex].pParamUpdateEventData);
+  }
+
+  // Send parameter update
+  bStatus_t status = GAP_UpdateLinkParamReq(&req);
+
+  // If there is an ongoing update, queue this for when the udpate completes
+  if (status == bleAlreadyInRequestedMode)
+  {
+    mrConnHandleEntry_t *connHandleEntry = ICall_malloc(sizeof(mrConnHandleEntry_t));
+    if (connHandleEntry)
+    {
+      connHandleEntry->connHandle = connHandle;
+
+      List_put(&paramUpdateList, (List_Elem *)connHandleEntry);
     }
   }
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_processAdvEvent
+* @fn      multi_role_processAppMsg
+*
+* @brief   Process an incoming callback from a profile.
+*
+* @param   pMsg - message to process
+*
+* @return  None.
+*/
+static void multi_role_processAppMsg(mrEvt_t *pMsg)
+{
+  bool safeToDealloc = TRUE;
+
+  if (pMsg->event <= APP_EVT_EVENT_MAX)
+  {
+    BLE_LOG_INT_STR(0, BLE_LOG_MODULE_APP, "APP : App msg status=%d, event=%s\n", 0, appEventStrings[pMsg->event]);
+  }
+  else
+  {
+    BLE_LOG_INT_INT(0, BLE_LOG_MODULE_APP, "APP : App msg status=%d, event=0x%x\n", 0, pMsg->event);
+  }
+
+  switch (pMsg->event)
+  {
+    case MR_EVT_CHAR_CHANGE:
+    {
+      multi_role_processCharValueChangeEvt(*(uint8_t*)(pMsg->pData));
+      break;
+    }
+
+    case MR_EVT_KEY_CHANGE:
+    {
+      multi_role_handleKeys(*(uint8_t *)(pMsg->pData));
+      break;
+    }
+
+    case MR_EVT_ADV_REPORT:
+    {
+      GapScan_Evt_AdvRpt_t* pAdvRpt = (GapScan_Evt_AdvRpt_t*) (pMsg->pData);
+
+#if (DEFAULT_DEV_DISC_BY_SVC_UUID == TRUE)
+      if (multi_role_findSvcUuid(SIMPLEPROFILE_SERV_UUID,
+                                 pAdvRpt->pData, pAdvRpt->dataLen))
+      {
+        multi_role_addScanInfo(pAdvRpt->addr, pAdvRpt->addrType);
+        Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Discovered: %s",
+                       Util_convertBdAddr2Str(pAdvRpt->addr));
+      }
+#else // !DEFAULT_DEV_DISC_BY_SVC_UUID
+      Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Discovered: %s",
+                     Util_convertBdAddr2Str(pAdvRpt->addr));
+#endif // DEFAULT_DEV_DISC_BY_SVC_UUID
+
+      // Free scan payload data
+      if (pAdvRpt->pData != NULL)
+      {
+        ICall_free(pAdvRpt->pData);
+      }
+      break;
+    }
+
+    case MR_EVT_SCAN_ENABLED:
+    {
+      // Disable everything but "Stop Discovering" on the menu
+      tbm_setItemStatus(&mrMenuMain, MR_ITEM_STOPDISC,
+                       (MR_ITEM_ALL & ~MR_ITEM_STOPDISC));
+      Display_printf(dispHandle, MR_ROW_NON_CONN, 0, "Discovering...");
+
+      break;
+    }
+
+    case MR_EVT_SCAN_DISABLED:
+    {
+      uint8_t numReport;
+      uint8_t i;
+      static uint8_t* pAddrs = NULL;
+      uint8_t* pAddrTemp;
+      uint16_t itemsToEnable = MR_ITEM_STARTDISC | MR_ITEM_ADVERTISE | MR_ITEM_PHY;
+#if (DEFAULT_DEV_DISC_BY_SVC_UUID == TRUE)
+      numReport = numScanRes;
+#else // !DEFAULT_DEV_DISC_BY_SVC_UUID
+      GapScan_Evt_AdvRpt_t advRpt;
+
+      numReport = ((GapScan_Evt_End_t*) (pMsg->pData))->numReport;
+#endif // DEFAULT_DEV_DISC_BY_SVC_UUID
+
+      Display_printf(dispHandle, MR_ROW_NON_CONN, 0,
+                     "%d devices discovered", numReport);
+
+      if (numReport > 0)
+      {
+        // Also enable "Connect to"
+        itemsToEnable |= MR_ITEM_CONNECT;
+      }
+
+      if (numConn > 0)
+      {
+        // Also enable "Work with"
+        itemsToEnable |= MR_ITEM_SELECTCONN;
+      }
+
+      // Enable "Discover Devices", "Set Scanning PHY", and possibly
+      // "Connect to" and/or "Work with".
+      // Disable "Stop Discovering".
+      tbm_setItemStatus(&mrMenuMain, itemsToEnable, MR_ITEM_STOPDISC);
+      if (pAddrs != NULL)
+      {
+        ICall_free(pAddrs);
+      }
+      // Allocate buffer to display addresses
+      pAddrs = ICall_malloc(numReport * MR_ADDR_STR_SIZE);
+      if (pAddrs == NULL)
+      {
+        numReport = 0;
+      }
+
+      TBM_SET_NUM_ITEM(&mrMenuConnect, numReport);
+
+      if (pAddrs != NULL)
+      {
+        pAddrTemp = pAddrs;
+        for (i = 0; i < numReport; i++, pAddrTemp += MR_ADDR_STR_SIZE)
+        {
+  #if (DEFAULT_DEV_DISC_BY_SVC_UUID == TRUE)
+          // Get the address from the list, convert it to string, and
+          // copy the string to the address buffer
+          memcpy(pAddrTemp, Util_convertBdAddr2Str(scanList[i].addr),
+                 MR_ADDR_STR_SIZE);
+  #else // !DEFAULT_DEV_DISC_BY_SVC_UUID
+          // Get the address from the report, convert it to string, and
+          // copy the string to the address buffer
+          GapScan_getAdvReport(i, &advRpt);
+          memcpy(pAddrTemp, Util_convertBdAddr2Str(advRpt.addr),
+                 MR_ADDR_STR_SIZE);
+  #endif // DEFAULT_DEV_DISC_BY_SVC_UUID
+
+          // Assign the string to the corresponding action description of the menu
+          TBM_SET_ACTION_DESC(&mrMenuConnect, i, pAddrTemp);
+          tbm_setItemStatus(&mrMenuConnect, (1 << i) , TBM_ITEM_NONE);
+        }
+
+        // Disable any non-active scan results
+        for(; i < DEFAULT_MAX_SCAN_RES; i++)
+        {
+          tbm_setItemStatus(&mrMenuConnect, TBM_ITEM_NONE, (1 << i));
+        }
+      }
+      break;
+    }
+
+    case MR_EVT_SVC_DISC:
+    {
+      multi_role_startSvcDiscovery();
+      break;
+    }
+
+    case MR_EVT_ADV:
+    {
+      multi_role_processAdvEvent((mrGapAdvEventData_t*)(pMsg->pData));
+      break;
+    }
+
+    case MR_EVT_PAIRING_STATE:
+    {
+      multi_role_processPairState((mrPairStateData_t*)(pMsg->pData));
+      break;
+    }
+
+    case MR_EVT_PASSCODE_NEEDED:
+    {
+      multi_role_processPasscode((mrPasscodeData_t*)(pMsg->pData));
+      break;
+    }
+
+    case MR_EVT_SEND_PARAM_UPDATE:
+    {
+      // Extract connection handle from data
+      uint16_t locConnHandle = *(uint16_t *)(((mrClockEventData_t *)pMsg->pData)->data);
+      multi_role_processParamUpdate(locConnHandle);
+      safeToDealloc = FALSE;
+      break;
+    }
+
+    case MR_EVT_PERIODIC:
+    {
+      multi_role_performPeriodicTask();
+      break;
+    }
+
+    case MR_EVT_READ_RPA:
+    {
+      multi_role_updateRPA();
+      break;
+    }
+
+    case MR_EVT_INSUFFICIENT_MEM:
+    {
+      // We are running out of memory.
+      Display_printf(dispHandle, MR_ROW_ANY_CONN, 0, "Insufficient Memory");
+
+      // We might be in the middle of scanning, try stopping it.
+      GapScan_disable();
+      break;
+    }
+
+    case MR_CONN_EVT:
+      multi_role_processConnEvt((Gap_ConnEventRpt_t *)(pMsg->pData));
+      break;
+
+    case MR_OAD_RESET_EVT:
+      multi_role_processOadResetEvt((oadResetWrite_t *)(pMsg->pData));
+      break;
+
+    default:
+      // Do nothing.
+      break;
+  }
+
+  if ((safeToDealloc == TRUE) && (pMsg->pData != NULL))
+  {
+    ICall_free(pMsg->pData);
+  }
+}
+
+/*********************************************************************
+ * @fn      multi_role_processAdvEvent
  *
  * @brief   Process advertising event in app context
  *
  * @param   pEventData
  */
-static void SimplePeripheral_processAdvEvent(spGapAdvEventData_t *pEventData)
+static void multi_role_processAdvEvent(mrGapAdvEventData_t *pEventData)
 {
   switch (pEventData->event)
   {
     case GAP_EVT_ADV_START_AFTER_ENABLE:
-      Display_printf(dispHandle, SP_ROW_ADVSTATE, 0, "Adv Set %d Enabled",
+      BLE_LOG_INT_TIME(0, BLE_LOG_MODULE_APP, "APP : ---- GAP_EVT_ADV_START_AFTER_ENABLE", 0);
+      mrIsAdvertising = true;
+      Display_printf(dispHandle, MR_ROW_ADVERTIS, 0, "Adv Set %d Enabled",
                      *(uint8_t *)(pEventData->pBuf));
       break;
 
     case GAP_EVT_ADV_END_AFTER_DISABLE:
-      Display_printf(dispHandle, SP_ROW_ADVSTATE, 0, "Adv Set %d Disabled",
+      mrIsAdvertising = false;
+      Display_printf(dispHandle, MR_ROW_ADVERTIS, 0, "Adv Set %d Disabled",
                      *(uint8_t *)(pEventData->pBuf));
       break;
 
     case GAP_EVT_ADV_START:
+      Display_printf(dispHandle, MR_ROW_ADVERTIS, 0, "Adv Started %d Enabled",
+                     *(uint8_t *)(pEventData->pBuf));
       break;
 
     case GAP_EVT_ADV_END:
+      Display_printf(dispHandle, MR_ROW_ADVERTIS, 0, "Adv Ended %d Disabled",
+                     *(uint8_t *)(pEventData->pBuf));
       break;
 
     case GAP_EVT_ADV_SET_TERMINATED:
     {
+      mrIsAdvertising = false;
+#ifndef Display_DISABLE_ALL
       GapAdv_setTerm_t *advSetTerm = (GapAdv_setTerm_t *)(pEventData->pBuf);
-
-      Display_printf(dispHandle, SP_ROW_ADVSTATE, 0, "Adv Set %d disabled after conn %d",
+#endif
+      Display_printf(dispHandle, MR_ROW_ADVERTIS, 0, "Adv Set %d disabled after conn %d",
                      advSetTerm->handle, advSetTerm->connHandle );
     }
     break;
@@ -1659,18 +2007,598 @@ static void SimplePeripheral_processAdvEvent(spGapAdvEventData_t *pEventData)
   }
 }
 
+#if (DEFAULT_DEV_DISC_BY_SVC_UUID == TRUE)
+/*********************************************************************
+ * @fn      multi_role_findSvcUuid
+ *
+ * @brief   Find a given UUID in an advertiser's service UUID list.
+ *
+ * @return  TRUE if service UUID found
+ */
+static bool multi_role_findSvcUuid(uint16_t uuid, uint8_t *pData,
+                                      uint16_t dataLen)
+{
+  uint8_t adLen;
+  uint8_t adType;
+  uint8_t *pEnd;
+
+  if (dataLen > 0)
+  {
+    pEnd = pData + dataLen - 1;
+
+    // While end of data not reached
+    while (pData < pEnd)
+    {
+      // Get length of next AD item
+      adLen = *pData++;
+      if (adLen > 0)
+      {
+        adType = *pData;
+
+        // If AD type is for 16-bit service UUID
+        if ((adType == GAP_ADTYPE_16BIT_MORE) ||
+            (adType == GAP_ADTYPE_16BIT_COMPLETE))
+        {
+          pData++;
+          adLen--;
+
+          // For each UUID in list
+          while (adLen >= 2 && pData < pEnd)
+          {
+            // Check for match
+            if ((pData[0] == LO_UINT16(uuid)) && (pData[1] == HI_UINT16(uuid)))
+            {
+              // Match found
+              return TRUE;
+            }
+
+            // Go to next
+            pData += 2;
+            adLen -= 2;
+          }
+
+          // Handle possible erroneous extra byte in UUID list
+          if (adLen == 1)
+          {
+            pData++;
+          }
+        }
+        else
+        {
+          // Go to next item
+          pData += adLen;
+        }
+      }
+    }
+  }
+
+  // Match not found
+  return FALSE;
+}
 
 /*********************************************************************
- * @fn      SimplePeripheral_pairStateCb
+ * @fn      multi_role_addScanInfo
  *
- * @brief   Pairing state callback.
+ * @brief   Add a device to the scanned device list
  *
  * @return  none
  */
-static void SimplePeripheral_pairStateCb(uint16_t connHandle, uint8_t state,
-                                         uint8_t status)
+static void multi_role_addScanInfo(uint8_t *pAddr, uint8_t addrType)
 {
-  spPairStateData_t *pData = ICall_malloc(sizeof(spPairStateData_t));
+  uint8_t i;
+
+  // If result count not at max
+  if (numScanRes < DEFAULT_MAX_SCAN_RES)
+  {
+    // Check if device is already in scan results
+    for (i = 0; i < numScanRes; i++)
+    {
+      if (memcmp(pAddr, scanList[i].addr , B_ADDR_LEN) == 0)
+      {
+        return;
+      }
+    }
+
+    // Add addr to scan result list
+    memcpy(scanList[numScanRes].addr, pAddr, B_ADDR_LEN);
+    scanList[numScanRes].addrType = addrType;
+
+    // Increment scan result count
+    numScanRes++;
+  }
+}
+#endif // DEFAULT_DEV_DISC_BY_SVC_UUID
+
+/*********************************************************************
+ * @fn      multi_role_scanCB
+ *
+ * @brief   Callback called by GapScan module
+ *
+ * @param   evt - event
+ * @param   msg - message coming with the event
+ * @param   arg - user argument
+ *
+ * @return  none
+ */
+void multi_role_scanCB(uint32_t evt, void* pMsg, uintptr_t arg)
+{
+  uint8_t event;
+
+  if (evt & GAP_EVT_ADV_REPORT)
+  {
+    event = MR_EVT_ADV_REPORT;
+  }
+  else if (evt & GAP_EVT_SCAN_ENABLED)
+  {
+    event = MR_EVT_SCAN_ENABLED;
+  }
+  else if (evt & GAP_EVT_SCAN_DISABLED)
+  {
+    event = MR_EVT_SCAN_DISABLED;
+  }
+  else if (evt & GAP_EVT_INSUFFICIENT_MEMORY)
+  {
+    event = MR_EVT_INSUFFICIENT_MEM;
+  }
+  else
+  {
+    return;
+  }
+
+  if(multi_role_enqueueMsg(event, pMsg) != SUCCESS)
+  {
+    ICall_free(pMsg);
+  }
+
+}
+
+/*********************************************************************
+* @fn      multi_role_charValueChangeCB
+*
+* @brief   Callback from Simple Profile indicating a characteristic
+*          value change.
+*
+* @param   paramID - parameter ID of the value that was changed.
+*
+* @return  None.
+*/
+static void multi_role_charValueChangeCB(uint8_t paramID)
+{
+  uint8_t *pData;
+
+  // Allocate space for the event data.
+  if ((pData = ICall_malloc(sizeof(uint8_t))))
+  {
+    *pData = paramID;
+
+    // Queue the event.
+    if(multi_role_enqueueMsg(MR_EVT_CHAR_CHANGE, pData) != SUCCESS)
+    {
+      ICall_free(pData);
+    }
+  }
+}
+
+/*********************************************************************
+ * @fn      multi_role_enqueueMsg
+ *
+ * @brief   Creates a message and puts the message in RTOS queue.
+ *
+ * @param   event - message event.
+ * @param   state - message state.
+ * @param   pData - message data pointer.
+ *
+ * @return  TRUE or FALSE
+ */
+static status_t multi_role_enqueueMsg(uint8_t event, void *pData)
+{
+  uint8_t success;
+  mrEvt_t *pMsg = ICall_malloc(sizeof(mrEvt_t));
+
+  // Create dynamic pointer to message.
+  if (pMsg)
+  {
+    pMsg->event = event;
+    pMsg->pData = pData;
+
+    // Enqueue the message.
+#ifdef FREERTOS
+    success = Util_enqueueMsg(g_POSIX_appMsgQueue, syncEvent, (uint8_t *)pMsg);
+#else
+    success = Util_enqueueMsg(appMsgQueue, syncEvent, (uint8_t *)pMsg);
+#endif
+    return (success) ? SUCCESS : FAILURE;
+  }
+
+  return(bleMemAllocError);
+}
+
+/*********************************************************************
+ * @fn      multi_role_processCharValueChangeEvt
+ *
+ * @brief   Process a pending Simple Profile characteristic value change
+ *          event.
+ *
+ * @param   paramID - parameter ID of the value that was changed.
+ */
+static void multi_role_processCharValueChangeEvt(uint8_t paramId)
+{
+  uint8_t newValue;
+
+  switch(paramId)
+  {
+    case SIMPLEPROFILE_CHAR1:
+      SimpleProfile_GetParameter(SIMPLEPROFILE_CHAR1, &newValue);
+
+      Display_printf(dispHandle, MR_ROW_CHARSTAT, 0, "Char 1: %d", (uint16_t)newValue);
+      break;
+
+    case SIMPLEPROFILE_CHAR3:
+      SimpleProfile_GetParameter(SIMPLEPROFILE_CHAR3, &newValue);
+
+      Display_printf(dispHandle, MR_ROW_CHARSTAT, 0, "Char 3: %d", (uint16_t)newValue);
+      break;
+
+    default:
+      // should not reach here!
+      break;
+  }
+}
+
+/*********************************************************************
+ * @fn      multi_role_performPeriodicTask
+ *
+ * @brief   Perform a periodic application task. This function gets called
+ *          every five seconds (MR_PERIODIC_EVT_PERIOD). In this example,
+ *          the value of the third characteristic in the SimpleGATTProfile
+ *          service is retrieved from the profile, and then copied into the
+ *          value of the the fourth characteristic.
+ *
+ * @param   None.
+ *
+ * @return  None.
+ */
+static void multi_role_performPeriodicTask(void)
+{
+  uint8_t valueToCopy;
+
+  // Call to retrieve the value of the third characteristic in the profile
+  if (SimpleProfile_GetParameter(SIMPLEPROFILE_CHAR3, &valueToCopy) == SUCCESS)
+  {
+    // Call to set that value of the fourth characteristic in the profile.
+    // Note that if notifications of the fourth characteristic have been
+    // enabled by a GATT client device, then a notification will be sent
+    // every time this function is called.
+    SimpleProfile_SetParameter(SIMPLEPROFILE_CHAR4, sizeof(uint8_t),
+                               &valueToCopy);
+  }
+}
+
+/*********************************************************************
+ * @fn      multi_role_updateRPA
+ *
+ * @brief   Read the current RPA from the stack and update display
+ *          if the RPA has changed.
+ *
+ * @param   None.
+ *
+ * @return  None.
+ */
+static void multi_role_updateRPA(void)
+{
+  uint8_t* pRpaNew;
+
+  // Read the current RPA.
+  pRpaNew = GAP_GetDevAddress(FALSE);
+
+  if (memcmp(pRpaNew, rpa, B_ADDR_LEN))
+  {
+    // If the RPA has changed, update the display
+    Display_printf(dispHandle, MR_ROW_RPA, 0, "RP Addr: %s",
+                   Util_convertBdAddr2Str(pRpaNew));
+    memcpy(rpa, pRpaNew, B_ADDR_LEN);
+  }
+}
+
+/*********************************************************************
+ * @fn      multi_role_clockHandler
+ *
+ * @brief   Handler function for clock timeouts.
+ *
+ * @param   arg - event type
+ *
+ * @return  None.
+ */
+#ifdef FREERTOS
+static void multi_role_clockHandler(void * arg)
+#else
+static void multi_role_clockHandler(UArg arg)
+#endif
+{
+  mrClockEventData_t *pData = (mrClockEventData_t *)arg;
+
+  if (pData->event == MR_EVT_PERIODIC)
+  {
+    // Start the next period
+    Util_startClock(&clkPeriodic);
+
+    // Send message to perform periodic task
+    multi_role_enqueueMsg(MR_EVT_PERIODIC, NULL);
+  }
+  else if (pData->event == MR_EVT_READ_RPA)
+  {
+    // Start the next period
+    Util_startClock(&clkRpaRead);
+
+    // Send message to read the current RPA
+    multi_role_enqueueMsg(MR_EVT_READ_RPA, NULL);
+  }
+  else if (pData->event == MR_EVT_SEND_PARAM_UPDATE)
+  {
+    // Send message to app
+    multi_role_enqueueMsg(MR_EVT_SEND_PARAM_UPDATE, pData);
+  }
+}
+
+/*********************************************************************
+* @fn      multi_role_keyChangeHandler
+*
+* @brief   Key event handler function
+*
+* @param   a0 - ignored
+*
+* @return  none
+*/
+static void multi_role_keyChangeHandler(uint8_t keys)
+{
+  uint8_t *pValue = ICall_malloc(sizeof(uint8_t));
+
+  if (pValue)
+  {
+    *pValue = keys;
+
+    multi_role_enqueueMsg(MR_EVT_KEY_CHANGE, pValue);
+  }
+}
+
+/*********************************************************************
+* @fn      multi_role_handleKeys
+*
+* @brief   Handles all key events for this device.
+*
+* @param   keys - bit field for key events. Valid entries:
+*                 HAL_KEY_SW_2
+*                 HAL_KEY_SW_1
+*
+* @return  none
+*/
+static void multi_role_handleKeys(uint8_t keys)
+{
+#ifndef FREERTOS
+    uint32_t rtnVal = 0;
+#endif
+    if (keys & KEY_LEFT)
+  {
+#ifndef FREERTOS
+    // Check if the key is still pressed
+    if (GPIO_read(CONFIG_GPIO_BTN1) == 0)
+    {
+#endif
+      tbm_buttonLeft();
+#ifndef FREERTOS
+    }
+#endif
+  }
+  else if (keys & KEY_RIGHT)
+  {
+    // Check if the key is still pressed
+#ifndef FREERTOS
+    rtnVal = GPIO_read(CONFIG_GPIO_BTN2);
+    if (rtnVal == 0)
+    {
+#endif
+    tbm_buttonRight();
+#ifndef FREERTOS
+    }
+#endif
+  }
+}
+
+/*********************************************************************
+* @fn      multi_role_processGATTDiscEvent
+*
+* @brief   Process GATT discovery event
+*
+* @param   pMsg - pointer to discovery event stack message
+*
+* @return  none
+*/
+static void multi_role_processGATTDiscEvent(gattMsgEvent_t *pMsg)
+{
+  uint8_t connIndex = multi_role_getConnIndex(pMsg->connHandle);
+  MULTIROLE_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
+
+  if (connList[connIndex].discState == BLE_DISC_STATE_MTU)
+  {
+    // MTU size response received, discover simple service
+    if (pMsg->method == ATT_EXCHANGE_MTU_RSP)
+    {
+      uint8_t uuid[ATT_BT_UUID_SIZE] = { LO_UINT16(SIMPLEPROFILE_SERV_UUID),
+                                         HI_UINT16(SIMPLEPROFILE_SERV_UUID) };
+
+      connList[connIndex].discState = BLE_DISC_STATE_SVC;
+
+      // Discovery simple service
+      VOID GATT_DiscPrimaryServiceByUUID(pMsg->connHandle, uuid,
+                                         ATT_BT_UUID_SIZE, selfEntity);
+    }
+  }
+  else if (connList[connIndex].discState == BLE_DISC_STATE_SVC)
+  {
+    // Service found, store handles
+    if (pMsg->method == ATT_FIND_BY_TYPE_VALUE_RSP &&
+        pMsg->msg.findByTypeValueRsp.numInfo > 0)
+    {
+      svcStartHdl = ATT_ATTR_HANDLE(pMsg->msg.findByTypeValueRsp.pHandlesInfo, 0);
+      svcEndHdl = ATT_GRP_END_HANDLE(pMsg->msg.findByTypeValueRsp.pHandlesInfo, 0);
+    }
+
+    // If procedure complete
+    if (((pMsg->method == ATT_FIND_BY_TYPE_VALUE_RSP) &&
+         (pMsg->hdr.status == bleProcedureComplete))  ||
+        (pMsg->method == ATT_ERROR_RSP))
+    {
+      if (svcStartHdl != 0)
+      {
+        attReadByTypeReq_t req;
+
+        // Discover characteristic
+        connList[connIndex].discState = BLE_DISC_STATE_CHAR;
+
+        req.startHandle = svcStartHdl;
+        req.endHandle = svcEndHdl;
+        req.type.len = ATT_BT_UUID_SIZE;
+        req.type.uuid[0] = LO_UINT16(SIMPLEPROFILE_CHAR1_UUID);
+        req.type.uuid[1] = HI_UINT16(SIMPLEPROFILE_CHAR1_UUID);
+
+        VOID GATT_DiscCharsByUUID(pMsg->connHandle, &req, selfEntity);
+      }
+    }
+  }
+  else if (connList[connIndex].discState == BLE_DISC_STATE_CHAR)
+  {
+    // Characteristic found, store handle
+    if ((pMsg->method == ATT_READ_BY_TYPE_RSP) &&
+        (pMsg->msg.readByTypeRsp.numPairs > 0))
+    {
+      uint8_t connIndex = multi_role_getConnIndex(mrConnHandle);
+
+      // connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
+      MULTIROLE_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
+
+      // Store the handle of the simpleprofile characteristic 1 value
+      connList[connIndex].charHandle
+        = BUILD_UINT16(pMsg->msg.readByTypeRsp.pDataList[3],
+                       pMsg->msg.readByTypeRsp.pDataList[4]);
+
+      Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Simple Svc Found");
+
+      // Now we can use GATT Read/Write
+      tbm_setItemStatus(&mrMenuPerConn,
+                        MR_ITEM_GATTREAD | MR_ITEM_GATTWRITE, MR_ITEM_NONE);
+    }
+
+    connList[connIndex].discState = BLE_DISC_STATE_IDLE;
+  }
+}
+
+/*********************************************************************
+* @fn      multi_role_getConnIndex
+*
+* @brief   Translates connection handle to index
+*
+* @param   connHandle - the connection handle
+*
+ * @return  the index of the entry that has the given connection handle.
+ *          if there is no match, MAX_NUM_BLE_CONNS will be returned.
+*/
+static uint16_t multi_role_getConnIndex(uint16_t connHandle)
+{
+  uint8_t i;
+  // Loop through connection
+  for (i = 0; i < MAX_NUM_BLE_CONNS; i++)
+  {
+    // If matching connection handle found
+    if (connList[i].connHandle == connHandle)
+    {
+      return i;
+    }
+  }
+
+  // Not found if we got here
+  return(MAX_NUM_BLE_CONNS);
+}
+
+#ifndef Display_DISABLE_ALL
+/*********************************************************************
+ * @fn      multi_role_getConnAddrStr
+ *
+ * @brief   Return, in string form, the address of the peer associated with
+ *          the connHandle.
+ *
+ * @return  A null-terminated string of the address.
+ *          if there is no match, NULL will be returned.
+ */
+static char* multi_role_getConnAddrStr(uint16_t connHandle)
+{
+  uint8_t i;
+
+  for (i = 0; i < MAX_NUM_BLE_CONNS; i++)
+  {
+    if (connList[i].connHandle == connHandle)
+    {
+      return Util_convertBdAddr2Str(connList[i].addr);
+    }
+  }
+
+  return NULL;
+}
+#endif
+
+/*********************************************************************
+ * @fn      multi_role_clearConnListEntry
+ *
+ * @brief   clear device list by connHandle
+ *
+ * @return  SUCCESS if connHandle found valid index or bleInvalidRange
+ *          if index wasn't found. LINKDB_CONNHANDLE_ALL will always succeed.
+ */
+static uint8_t multi_role_clearConnListEntry(uint16_t connHandle)
+{
+  uint8_t i;
+  // Set to invalid connection index initially
+  uint8_t connIndex = MAX_NUM_BLE_CONNS;
+
+  if(connHandle != LINKDB_CONNHANDLE_ALL)
+  {
+    connIndex = multi_role_getConnIndex(connHandle);
+    // Get connection index from handle
+    if(connIndex >= MAX_NUM_BLE_CONNS)
+    {
+      return bleInvalidRange;
+    }
+  }
+
+  // Clear specific handle or all handles
+  for(i = 0; i < MAX_NUM_BLE_CONNS; i++)
+  {
+    if((connIndex == i) || (connHandle == LINKDB_CONNHANDLE_ALL))
+    {
+      connList[i].connHandle = LINKDB_CONNHANDLE_INVALID;
+      connList[i].charHandle = 0;
+      connList[i].discState  =  0;
+    }
+  }
+
+  return SUCCESS;
+}
+
+
+/************************************************************************
+* @fn      multi_role_pairStateCB
+*
+* @param   connHandle - the connection handle
+*
+* @param   state - pairing state
+*
+* @param   status - status of pairing state
+*
+* @return  none
+*/
+static void multi_role_pairStateCB(uint16_t connHandle, uint8_t state,
+                                   uint8_t status)
+{
+  mrPairStateData_t *pData = ICall_malloc(sizeof(mrPairStateData_t));
 
   // Allocate space for the event data.
   if (pData)
@@ -1680,39 +2608,7 @@ static void SimplePeripheral_pairStateCb(uint16_t connHandle, uint8_t state,
     pData->status = status;
 
     // Queue the event.
-    if(SimplePeripheral_enqueueMsg(SP_PAIR_STATE_EVT, pData) != SUCCESS)
-    {
-      ICall_freeMsg(pData);
-    }
-  }
-}
-
-/*********************************************************************
- * @fn      SimplePeripheral_passcodeCb
- *
- * @brief   Passcode callback.
- *
- * @return  none
- */
-static void SimplePeripheral_passcodeCb(uint8_t *pDeviceAddr,
-                                        uint16_t connHandle,
-                                        uint8_t uiInputs,
-                                        uint8_t uiOutputs,
-                                        uint32_t numComparison)
-{
-  spPasscodeData_t *pData = ICall_malloc(sizeof(spPasscodeData_t));
-
-  // Allocate space for the passcode event.
-  if (pData )
-  {
-    pData->connHandle = connHandle;
-    memcpy(pData->deviceAddr, pDeviceAddr, B_ADDR_LEN);
-    pData->uiInputs = uiInputs;
-    pData->uiOutputs = uiOutputs;
-    pData->numComparison = numComparison;
-
-    // Enqueue the event.
-    if(SimplePeripheral_enqueueMsg(SP_PASSCODE_EVT, pData) != SUCCESS)
+    if (multi_role_enqueueMsg(MR_EVT_PAIRING_STATE, pData) != SUCCESS)
     {
       ICall_free(pData);
     }
@@ -1720,13 +2616,55 @@ static void SimplePeripheral_passcodeCb(uint8_t *pDeviceAddr,
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_processPairState
- *
- * @brief   Process the new paring state.
- *
- * @return  none
- */
-static void SimplePeripheral_processPairState(spPairStateData_t *pPairData)
+* @fn      multi_role_passcodeCB
+*
+* @brief   Passcode callback.
+*
+* @param   deviceAddr - pointer to device address
+*
+* @param   connHandle - the connection handle
+*
+* @param   uiInputs - pairing User Interface Inputs
+*
+* @param   uiOutputs - pairing User Interface Outputs
+*
+* @param   numComparison - numeric Comparison 20 bits
+*
+* @return  none
+*/
+static void multi_role_passcodeCB(uint8_t *deviceAddr, uint16_t connHandle,
+                                  uint8_t uiInputs, uint8_t uiOutputs,
+                                  uint32_t numComparison)
+{
+  mrPasscodeData_t *pData = ICall_malloc(sizeof(mrPasscodeData_t));
+
+  // Allocate space for the passcode event.
+  if (pData)
+  {
+    pData->connHandle = connHandle;
+    memcpy(pData->deviceAddr, deviceAddr, B_ADDR_LEN);
+    pData->uiInputs = uiInputs;
+    pData->uiOutputs = uiOutputs;
+    pData->numComparison = numComparison;
+
+    // Enqueue the event.
+    if (multi_role_enqueueMsg(MR_EVT_PASSCODE_NEEDED, pData) != SUCCESS)
+    {
+      ICall_free(pData);
+    }
+  }
+}
+
+/*********************************************************************
+* @fn      multi_role_processPairState
+*
+* @brief   Process the new paring state.
+*
+* @param   pairingEvent - pairing event received from the stack
+*
+* @return  none
+*/
+static void multi_role_processPairState(mrPairStateData_t *pPairData)
 {
   uint8_t state = pPairData->state;
   uint8_t status = pPairData->status;
@@ -1734,40 +2672,63 @@ static void SimplePeripheral_processPairState(spPairStateData_t *pPairData)
   switch (state)
   {
     case GAPBOND_PAIRING_STATE_STARTED:
-      Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Pairing started");
+      Display_printf(dispHandle, MR_ROW_SECURITY, 0, "Pairing started");
       break;
 
     case GAPBOND_PAIRING_STATE_COMPLETE:
       if (status == SUCCESS)
       {
-        Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Pairing success");
+        linkDBInfo_t linkInfo;
+
+        Display_printf(dispHandle, MR_ROW_SECURITY, 0, "Pairing success");
+
+        if (linkDB_GetInfo(pPairData->connHandle, &linkInfo) == SUCCESS)
+        {
+          // If the peer was using private address, update with ID address
+          if ((linkInfo.addrType == ADDRTYPE_PUBLIC_ID ||
+               linkInfo.addrType == ADDRTYPE_RANDOM_ID) &&
+              !Util_isBufSet(linkInfo.addrPriv, 0, B_ADDR_LEN))
+
+          {
+            // Update the address of the peer to the ID address
+            Display_printf(dispHandle, MR_ROW_NON_CONN, 0, "Addr updated: %s",
+                           Util_convertBdAddr2Str(linkInfo.addr));
+
+            // Update the connection list with the ID address
+            uint8_t i = multi_role_getConnIndex(pPairData->connHandle);
+
+            MULTIROLE_ASSERT(i < MAX_NUM_BLE_CONNS);
+            memcpy(connList[i].addr, linkInfo.addr, B_ADDR_LEN);
+          }
+        }
       }
       else
       {
-        Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Pairing fail: %d", status);
+        Display_printf(dispHandle, MR_ROW_SECURITY, 0, "Pairing fail: %d", status);
       }
       break;
 
     case GAPBOND_PAIRING_STATE_ENCRYPTED:
       if (status == SUCCESS)
       {
-        Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Encryption success");
+        Display_printf(dispHandle, MR_ROW_SECURITY, 0, "Encryption success");
       }
       else
       {
-        Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Encryption failed: %d", status);
+        Display_printf(dispHandle, MR_ROW_SECURITY, 0, "Encryption failed: %d", status);
       }
       break;
 
     case GAPBOND_PAIRING_STATE_BOND_SAVED:
       if (status == SUCCESS)
       {
-        Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Bond save success");
+        Display_printf(dispHandle, MR_ROW_SECURITY, 0, "Bond save success");
       }
       else
       {
-        Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Bond save failed: %d", status);
+        Display_printf(dispHandle, MR_ROW_SECURITY, 0, "Bond save failed: %d", status);
       }
+
       break;
 
     default:
@@ -1776,50 +2737,50 @@ static void SimplePeripheral_processPairState(spPairStateData_t *pPairData)
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_processPasscode
- *
- * @brief   Process the Passcode request.
- *
- * @return  none
- */
-static void SimplePeripheral_processPasscode(spPasscodeData_t *pPasscodeData)
+* @fn      multi_role_processPasscode
+*
+* @brief   Process the Passcode request.
+*
+* @return  none
+*/
+static void multi_role_processPasscode(mrPasscodeData_t *pData)
 {
   // Display passcode to user
-  if (pPasscodeData->uiOutputs != 0)
+  if (pData->uiOutputs != 0)
   {
-    Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Passcode: %d",
+    Display_printf(dispHandle, MR_ROW_SECURITY, 0, "Passcode: %d",
                    B_APP_DEFAULT_PASSCODE);
   }
 
   // Send passcode response
-  GAPBondMgr_PasscodeRsp(pPasscodeData->connHandle , SUCCESS,
+  GAPBondMgr_PasscodeRsp(pData->connHandle, SUCCESS,
                          B_APP_DEFAULT_PASSCODE);
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_connEvtCB
+ * @fn      multi_role_connEvtCB
  *
  * @brief   Connection event callback.
  *
  * @param pReport pointer to connection event report
  */
-static void SimplePeripheral_connEvtCB(Gap_ConnEventRpt_t *pReport)
+static void multi_role_connEvtCB(Gap_ConnEventRpt_t *pReport)
 {
   // Enqueue the event for processing in the app context.
-  if(SimplePeripheral_enqueueMsg(SP_CONN_EVT, pReport) != SUCCESS)
+  if(multi_role_enqueueMsg(MR_CONN_EVT, pReport) != SUCCESS)
   {
     ICall_freeMsg(pReport);
   }
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_processConnEvt
+ * @fn      multi_role_processConnEvt
  *
  * @brief   Process connection event.
  *
  * @param pReport pointer to connection event report
  */
-static void SimplePeripheral_processConnEvt(Gap_ConnEventRpt_t *pReport)
+static void multi_role_processConnEvt(Gap_ConnEventRpt_t *pReport)
 {
   /* If we are waiting for an OAD Reboot, process connection events to ensure
    * that we are not waiting to send data before restarting
@@ -1852,7 +2813,7 @@ static void SimplePeripheral_processConnEvt(Gap_ConnEventRpt_t *pReport)
   else
   {
     // Get index from handle
-    uint8_t connIndex = SimplePeripheral_getConnIndex(pReport->handle);
+    uint8_t connIndex = multi_role_getConnIndex(pReport->handle);
 
     // If auto phy change is enabled
     if (connList[connIndex].isAutoPHYEnable == TRUE)
@@ -1864,186 +2825,136 @@ static void SimplePeripheral_processConnEvt(Gap_ConnEventRpt_t *pReport)
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_enqueueMsg
+ * @fn      multi_role_startSvcDiscovery
  *
- * @brief   Creates a message and puts the message in RTOS queue.
+ * @brief   Start service discovery.
  *
- * @param   event - message event.
- * @param   state - message state.
+ * @return  none
  */
-static status_t SimplePeripheral_enqueueMsg(uint8_t event, void *pData)
+static void multi_role_startSvcDiscovery(void)
 {
-  uint8_t success;
-  spEvt_t *pMsg = ICall_malloc(sizeof(spEvt_t));
+  uint8_t connIndex = multi_role_getConnIndex(mrConnHandle);
 
-  // Create dynamic pointer to message.
-  if(pMsg)
-  {
-    pMsg->event = event;
-    pMsg->pData = pData;
+  // connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
+  MULTIROLE_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
 
-    // Enqueue the message.
-    success = Util_enqueueMsg(appMsgQueueHandle, syncEvent, (uint8_t *)pMsg);
-    return (success) ? SUCCESS : FAILURE;
-  }
+  attExchangeMTUReq_t req;
 
-  return(bleMemAllocError);
+  // Initialize cached handles
+  svcStartHdl = svcEndHdl = 0;
+
+  connList[connIndex].discState = BLE_DISC_STATE_MTU;
+
+  // Discover GATT Server's Rx MTU size
+  req.clientRxMTU = mrMaxPduSize - L2CAP_HDR_SIZE;
+
+  // ATT MTU size should be set to the minimum of the Client Rx MTU
+  // and Server Rx MTU values
+  VOID GATT_ExchangeMTU(mrConnHandle, &req, selfEntity);
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_doSelectConn
- *
- * @brief   Select a connection to communicate with
- *
- * @param   index - item index from the menu
- *
- * @return  always true
- */
-bool SimplePeripheral_doSelectConn(uint8_t index)
-{
-  menuConnHandle = connList[index].connHandle;
-
-  // Set the menu title and go to this connection's context
-  TBM_SET_TITLE(&spMenuPerConn, TBM_GET_ACTION_DESC(&spMenuSelectConn, index));
-
-  // Clear non-connection-related message
-  Display_clearLine(dispHandle, SP_ROW_CONNECTION);
-
-  tbm_goTo(&spMenuPerConn);
-
-  return (true);
-}
-
-/*********************************************************************
- * @fn      SimplePeripheral_addConn
- *
- * @brief   Add a device to the connected device list
- *
- * @return  index of the connected device list entry where the new connection
- *          info is put in.
- *          if there is no room, MAX_NUM_BLE_CONNS will be returned.
- */
-static uint8_t SimplePeripheral_addConn(uint16_t connHandle)
+* @fn      multi_role_addConnInfo
+*
+* @brief   add a new connection to the index-to-connHandle map
+*
+* @param   connHandle - the connection handle
+*
+* @param   addr - pointer to device address
+*
+* @return  index of connection handle
+*/
+static uint8_t multi_role_addConnInfo(uint16_t connHandle, uint8_t *pAddr,
+                                      uint8_t role)
 {
   uint8_t i;
-  uint8_t status = bleNoResources;
 
-  // Try to find an available entry
   for (i = 0; i < MAX_NUM_BLE_CONNS; i++)
   {
     if (connList[i].connHandle == LINKDB_CONNHANDLE_INVALID)
     {
-#ifdef DEFAULT_SEND_PARAM_UPDATE_REQ
-      spClockEventData_t *paramUpdateEventData;
-
-      // Allocate data to send through clock handler
-      paramUpdateEventData = ICall_malloc(sizeof(spClockEventData_t) +
-                                          sizeof (uint16_t));
-      if(paramUpdateEventData)
-      {
-        paramUpdateEventData->event = SP_SEND_PARAM_UPDATE_EVT;
-        *((uint16_t *)paramUpdateEventData->data) = connHandle;
-
-        // Create a clock object and start
-        connList[i].pUpdateClock
-          = (Clock_Struct*) ICall_malloc(sizeof(Clock_Struct));
-
-        if (connList[i].pUpdateClock)
-        {
-          Util_constructClock(connList[i].pUpdateClock,
-                              SimplePeripheral_clockHandler,
-                              SEND_PARAM_UPDATE_DELAY, 0, true,
-                              (UArg) paramUpdateEventData);
-        }
-      }
-      else
-      {
-        status = bleMemAllocError;
-      }
-#endif
-
       // Found available entry to put a new connection info in
       connList[i].connHandle = connHandle;
+      memcpy(connList[i].addr, pAddr, B_ADDR_LEN);
+      numConn++;
 
-      // Set default PHY to 1M
-      connList[i].currPhy = HCI_PHY_1_MBPS;
+#ifdef DEFAULT_SEND_PARAM_UPDATE_REQ
+      // If a peripheral, start the clock to send a connection parameter update
+      if(role == GAP_PROFILE_PERIPHERAL)
+      {
+        // Allocate data to send through clock handler
+        connList[i].pParamUpdateEventData = ICall_malloc(sizeof(mrClockEventData_t) +
+                                                         sizeof(uint16_t));
+        if(connList[i].pParamUpdateEventData)
+        {
+          // Set clock data
+          connList[i].pParamUpdateEventData->event = MR_EVT_SEND_PARAM_UPDATE;
+          *((uint16_t *)connList[i].pParamUpdateEventData->data) = connHandle;
+
+          // Create a clock object and start
+          connList[i].pUpdateClock
+            = (Clock_Struct*) ICall_malloc(sizeof(Clock_Struct));
+
+          if (connList[i].pUpdateClock)
+          {
+#ifdef FREERTOS
+              Util_constructClock(connList[i].pUpdateClock,
+                                              (void*)multi_role_clockHandler,
+                                              SEND_PARAM_UPDATE_DELAY, 0, true,
+                                              (void*) connList[i].pParamUpdateEventData);
+
+#else
+              Util_constructClock(connList[i].pUpdateClock,
+                                  multi_role_clockHandler,
+                                SEND_PARAM_UPDATE_DELAY, 0, true,
+                                (UArg) connList[i].pParamUpdateEventData);
+#endif
+          }
+          else
+          {
+            // Clean up
+            ICall_free(connList[i].pParamUpdateEventData);
+          }
+        }
+        else
+        {
+          // Memory allocation failed
+          MULTIROLE_ASSERT(false);
+        }
+      }
+#endif
 
       break;
     }
   }
 
-  return status;
+  return i;
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_getConnIndex
+ * @fn      multi_role_clearPendingParamUpdate
  *
- * @brief   Find index in the connected device list by connHandle
+ * @brief   clean pending param update request in the paramUpdateList list
  *
- * @return  the index of the entry that has the given connection handle.
- *          if there is no match, MAX_NUM_BLE_CONNS will be returned.
+ * @param   connHandle - connection handle to clean
+ *
+ * @return  none
  */
-static uint8_t SimplePeripheral_getConnIndex(uint16_t connHandle)
+void multi_role_clearPendingParamUpdate(uint16_t connHandle)
 {
-  uint8_t i;
+  List_Elem *curr;
 
-  for (i = 0; i < MAX_NUM_BLE_CONNS; i++)
+  for (curr = List_head(&paramUpdateList); curr != NULL; curr = List_next(curr)) 
   {
-    if (connList[i].connHandle == connHandle)
+    if (((mrConnHandleEntry_t *)curr)->connHandle == connHandle)
     {
-      return i;
+      List_remove(&paramUpdateList, curr);
     }
   }
-
-  return(MAX_NUM_BLE_CONNS);
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_getConnIndex
- *
- * @brief   Find index in the connected device list by connHandle
- *
- * @return  SUCCESS if connHandle found valid index or bleInvalidRange
- *          if index wasn't found. LINKDB_CONNHANDLE_ALL will always succeed.
- */
-static uint8_t SimplePeripheral_clearConnListEntry(uint16_t connHandle)
-{
-  uint8_t i;
-  // Set to invalid connection index initially
-  uint8_t connIndex = MAX_NUM_BLE_CONNS;
-
-  if(connHandle != LINKDB_CONNHANDLE_ALL)
-  {
-    // Get connection index from handle
-    connIndex = SimplePeripheral_getConnIndex(connHandle);
-    if(connIndex >= MAX_NUM_BLE_CONNS)
-	{
-	  return(bleInvalidRange);
-	}
-  }
-
-  // Clear specific handle or all handles
-  for(i = 0; i < MAX_NUM_BLE_CONNS; i++)
-  {
-    if((connIndex == i) || (connHandle == LINKDB_CONNHANDLE_ALL))
-    {
-      connList[i].connHandle = LINKDB_CONNHANDLE_INVALID;
-      connList[i].currPhy = 0;
-      connList[i].phyCngRq = 0;
-      connList[i].phyRqFailCnt = 0;
-      connList[i].rqPhy = 0;
-      memset(connList[i].rssiArr, 0, SP_MAX_RSSI_STORE_DEPTH);
-      connList[i].rssiAvg = 0;
-      connList[i].rssiCntr = 0;
-      connList[i].isAutoPHYEnable = FALSE;
-    }
-  }
-
-  return(SUCCESS);
-}
-
-/*********************************************************************
- * @fn      SimplePeripheral_removeConn
+ * @fn      multi_role_removeConnInfo
  *
  * @brief   Remove a device from the connected device list
  *
@@ -2051,11 +2962,11 @@ static uint8_t SimplePeripheral_clearConnListEntry(uint16_t connHandle)
  *          info is removed from.
  *          if connHandle is not found, MAX_NUM_BLE_CONNS will be returned.
  */
-static uint8_t SimplePeripheral_removeConn(uint16_t connHandle)
+static uint8_t multi_role_removeConnInfo(uint16_t connHandle)
 {
-  uint8_t connIndex = SimplePeripheral_getConnIndex(connHandle);
+  uint8_t connIndex = multi_role_getConnIndex(connHandle);
 
-  if(connIndex != MAX_NUM_BLE_CONNS)
+  if(connIndex < MAX_NUM_BLE_CONNS)
   {
     Clock_Struct* pUpdateClock = connList[connIndex].pUpdateClock;
 
@@ -2071,61 +2982,68 @@ static uint8_t SimplePeripheral_removeConn(uint16_t connHandle)
       Clock_destruct(pUpdateClock);
       // Free clock struct
       ICall_free(pUpdateClock);
+      // Free ParamUpdateEventData
+      ICall_free(connList[connIndex].pParamUpdateEventData);
     }
-    // Stop Auto PHY Change
-    SimplePeripheral_stopAutoPhyChange(connHandle);
+    // Clear pending update requests from paramUpdateList
+    multi_role_clearPendingParamUpdate(connHandle);
     // Clear Connection List Entry
-    SimplePeripheral_clearConnListEntry(connHandle);
+    multi_role_clearConnListEntry(connHandle);
+    numConn--;
   }
 
   return connIndex;
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_processParamUpdate
- *
- * @brief   Remove a device from the connected device list
- *
- * @return  index of the connected device list entry where the new connection
- *          info is removed from.
- *          if connHandle is not found, MAX_NUM_BLE_CONNS will be returned.
- */
-static void SimplePeripheral_processParamUpdate(uint16_t connHandle)
+* @fn      multi_role_doDiscoverDevices
+*
+* @brief   Respond to user input to start scanning
+*
+* @param   index - not used
+*
+* @return  TRUE since there is no callback to use this value
+*/
+bool multi_role_doDiscoverDevices(uint8_t index)
 {
-  gapUpdateLinkParamReq_t req;
-  uint8_t connIndex;
+  (void) index;
 
-  req.connectionHandle = connHandle;
-#ifdef DEFAULT_SEND_PARAM_UPDATE_REQ
-  req.connLatency = DEFAULT_DESIRED_SLAVE_LATENCY;
-  req.connTimeout = DEFAULT_DESIRED_CONN_TIMEOUT;
-  req.intervalMin = DEFAULT_DESIRED_MIN_CONN_INTERVAL;
-  req.intervalMax = DEFAULT_DESIRED_MAX_CONN_INTERVAL;
-#endif
+#if (DEFAULT_DEV_DISC_BY_SVC_UUID == TRUE)
+  // Scanning for DEFAULT_SCAN_DURATION x 10 ms.
+  // The stack does not need to record advertising reports
+  // since the application will filter them by Service UUID and save.
 
-  connIndex = SimplePeripheral_getConnIndex(connHandle);
-  SIMPLEPERIPHERAL_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
+  // Reset number of scan results to 0 before starting scan
+  numScanRes = 0;
+  GapScan_enable(0, DEFAULT_SCAN_DURATION, 0);
+#else // !DEFAULT_DEV_DISC_BY_SVC_UUID
+  // Scanning for DEFAULT_SCAN_DURATION x 10 ms.
+  // Let the stack record the advertising reports as many as up to DEFAULT_MAX_SCAN_RES.
+  GapScan_enable(0, DEFAULT_SCAN_DURATION, DEFAULT_MAX_SCAN_RES);
+#endif // DEFAULT_DEV_DISC_BY_SVC_UUID
+  // Enable only "Stop Discovering" and disable all others in the main menu
+  tbm_setItemStatus(&mrMenuMain, MR_ITEM_STOPDISC,
+                    (MR_ITEM_ALL & ~MR_ITEM_STOPDISC));
 
-  // Deconstruct the clock object
-  Clock_destruct(connList[connIndex].pUpdateClock);
-  // Free clock struct
-  ICall_free(connList[connIndex].pUpdateClock);
-  connList[connIndex].pUpdateClock = NULL;
+  return (true);
+}
 
-  // Send parameter update
-  bStatus_t status = GAP_UpdateLinkParamReq(&req);
+/*********************************************************************
+ * @fn      multi_role_doStopDiscovering
+ *
+ * @brief   Stop on-going scanning
+ *
+ * @param   index - item index from the menu
+ *
+ * @return  always true
+ */
+bool multi_role_doStopDiscovering(uint8_t index)
+{
+  (void) index;
 
-  // If there is an ongoing update, queue this for when the udpate completes
-  if (status == bleAlreadyInRequestedMode)
-  {
-    spConnHandleEntry_t *connHandleEntry = ICall_malloc(sizeof(spConnHandleEntry_t));
-    if (connHandleEntry)
-    {
-      connHandleEntry->connHandle = connHandle;
+  GapScan_disable();
 
-      List_put(&paramUpdateList, (List_Elem *)&connHandleEntry);
-    }
-  }
+  return (true);
 }
 
 /*********************************************************************
@@ -2137,7 +3055,7 @@ static void SimplePeripheral_processParamUpdate(uint16_t connHandle)
  *
  * @return  none
  */
-static void SimplePeripheral_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
+static void multi_role_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
 {
   uint8_t status = pMsg->pReturnParam[0];
 
@@ -2151,34 +3069,34 @@ static void SimplePeripheral_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
       {
         uint16_t handle = BUILD_UINT16(pMsg->pReturnParam[1], pMsg->pReturnParam[2]);
 
-        uint8_t index = SimplePeripheral_getConnIndex(handle);
-        SIMPLEPERIPHERAL_ASSERT(index < MAX_NUM_BLE_CONNS);
+        uint8_t index = multi_role_getConnIndex(handle);
+        MULTIROLE_ASSERT(index < MAX_NUM_BLE_CONNS);
 
         connList[index].rssiArr[connList[index].rssiCntr++] =
                                                   (int8_t)pMsg->pReturnParam[3];
-        connList[index].rssiCntr %= SP_MAX_RSSI_STORE_DEPTH;
+        connList[index].rssiCntr %= MR_MAX_RSSI_STORE_DEPTH;
 
         int16_t sum_rssi = 0;
-        for(uint8_t cnt=0; cnt<SP_MAX_RSSI_STORE_DEPTH; cnt++)
+        for(uint8_t cnt=0; cnt<MR_MAX_RSSI_STORE_DEPTH; cnt++)
         {
           sum_rssi += connList[index].rssiArr[cnt];
         }
-        connList[index].rssiAvg = (uint32_t)(sum_rssi/SP_MAX_RSSI_STORE_DEPTH);
+        connList[index].rssiAvg = (uint32_t)(sum_rssi/MR_MAX_RSSI_STORE_DEPTH);
 
-        Display_printf(dispHandle, SP_ROW_RSSI, 0,
+        Display_printf(dispHandle, MR_ROW_SEPARATOR, 0,
                        "RSSI:-%d, AVG RSSI:-%d",
                        (uint32_t)(-(int8_t)pMsg->pReturnParam[3]),
-                       (uint32_t)(-sum_rssi/SP_MAX_RSSI_STORE_DEPTH));
+                       (uint32_t)(-sum_rssi/MR_MAX_RSSI_STORE_DEPTH));
 
-        uint8_t phyRq = SP_PHY_NONE;
-        uint8_t phyRqS = SP_PHY_NONE;
+        uint8_t phyRq = MR_PHY_NONE;
+        uint8_t phyRqS = MR_PHY_NONE;
         uint8_t phyOpt = LL_PHY_OPT_NONE;
 
         if(connList[index].phyCngRq == FALSE)
         {
           if((connList[index].rssiAvg >= RSSI_2M_THRSHLD) &&
              (connList[index].currPhy != HCI_PHY_2_MBPS) &&
-             (connList[index].currPhy != SP_PHY_NONE))
+             (connList[index].currPhy != MR_PHY_NONE))
           {
             // try to go to higher data rate
             phyRqS = phyRq = HCI_PHY_2_MBPS;
@@ -2186,14 +3104,14 @@ static void SimplePeripheral_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
           else if((connList[index].rssiAvg < RSSI_2M_THRSHLD) &&
                   (connList[index].rssiAvg >= RSSI_1M_THRSHLD) &&
                   (connList[index].currPhy != HCI_PHY_1_MBPS) &&
-                  (connList[index].currPhy != SP_PHY_NONE))
+                  (connList[index].currPhy != MR_PHY_NONE))
           {
             // try to go to legacy regular data rate
             phyRqS = phyRq = HCI_PHY_1_MBPS;
           }
           else if((connList[index].rssiAvg >= RSSI_S2_THRSHLD) &&
                   (connList[index].rssiAvg < RSSI_1M_THRSHLD) &&
-                  (connList[index].currPhy != SP_PHY_NONE))
+                  (connList[index].currPhy != MR_PHY_NONE))
           {
             // try to go to lower data rate S=2(500kb/s)
             phyRqS = HCI_PHY_CODED;
@@ -2207,14 +3125,14 @@ static void SimplePeripheral_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
             phyOpt = LL_PHY_OPT_S8;
             phyRq = BLE5_CODED_S8_PHY;
           }
-          if((phyRq != SP_PHY_NONE) &&
+          if((phyRq != MR_PHY_NONE) &&
              // First check if the request for this phy change is already not honored then don't request for change
              (((connList[index].rqPhy == phyRq) &&
                (connList[index].phyRqFailCnt < 2)) ||
               (connList[index].rqPhy != phyRq)))
           {
             //Initiate PHY change based on RSSI
-            SimplePeripheral_setPhy(connList[index].connHandle, 0,
+            multi_role_setPhy(connList[index].connHandle, 0,
                                     phyRqS, phyRqS, phyOpt);
             connList[index].phyCngRq = TRUE;
 
@@ -2248,7 +3166,7 @@ static void SimplePeripheral_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
     {
       if (status == SUCCESS)
       {
-        Display_printf(dispHandle, SP_ROW_RSSI + 2, 0, "RXPh: %d, TXPh: %d",
+        Display_printf(dispHandle, MR_ROW_SEPARATOR + 2, 0, "RXPh: %d, TXPh: %d",
                        pMsg->pReturnParam[3], pMsg->pReturnParam[4]);
       }
       break;
@@ -2261,7 +3179,7 @@ static void SimplePeripheral_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
       if (memcmp(pRpaNew, rpa, B_ADDR_LEN))
       {
         // If the RPA has changed, update the display
-        Display_printf(dispHandle, SP_ROW_RPA, 0, "RP Addr: %s",
+        Display_printf(dispHandle, MR_ROW_RPA, 0, "RP Addr: %s",
                        Util_convertBdAddr2Str(pRpaNew));
         memcpy(rpa, pRpaNew, B_ADDR_LEN);
       }
@@ -2274,97 +3192,228 @@ static void SimplePeripheral_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
 }
 
 /*********************************************************************
-* @fn      SimplePeripheral_initPHYRSSIArray
+ * @fn      multi_role_doCancelConnecting
+ *
+ * @brief   Cancel on-going connection attempt
+ *
+ * @param   index - item index from the menu
+ *
+ * @return  always true
+ */
+bool multi_role_doCancelConnecting(uint8_t index)
+{
+  (void) index;
+
+  GapInit_cancelConnect();
+
+  return (true);
+}
+
+/*********************************************************************
+* @fn      multi_role_doConnect
 *
-* @brief   Initializes the array of structure/s to store data related
-*          RSSI based auto PHy change
+* @brief   Respond to user input to form a connection
 *
-* @param   connHandle - the connection handle
+* @param   index - index as selected from the mrMenuConnect
 *
-* @param   addr - pointer to device address
-*
-* @return  index of connection handle
+* @return  TRUE since there is no callback to use this value
 */
-static void SimplePeripheral_initPHYRSSIArray(void)
+bool multi_role_doConnect(uint8_t index)
 {
-  //Initialize array to store connection handle and RSSI values
-  memset(connList, 0, sizeof(connList));
-  for (uint8_t index = 0; index < MAX_NUM_BLE_CONNS; index++)
-  {
-    connList[index].connHandle = SP_INVALID_HANDLE;
-  }
+  // Temporarily disable advertising
+  GapAdv_disable(advHandle);
+
+#if (DEFAULT_DEV_DISC_BY_SVC_UUID == TRUE)
+  GapInit_connect(scanList[index].addrType & MASK_ADDRTYPE_ID,
+                  scanList[index].addr, mrInitPhy, 0);
+#else // !DEFAULT_DEV_DISC_BY_SVC_UUID
+  GapScan_Evt_AdvRpt_t advRpt;
+
+  GapScan_getAdvReport(index, &advRpt);
+
+  GapInit_connect(advRpt.addrType & MASK_ADDRTYPE_ID,
+                  advRpt.addr, mrInitPhy, 0);
+#endif // DEFAULT_DEV_DISC_BY_SVC_UUID
+
+  // Re-enable advertising
+  GapAdv_enable(advHandle, GAP_ADV_ENABLE_OPTIONS_USE_MAX , 0);
+
+  // Enable only "Cancel Connecting" and disable all others in the main menu
+  tbm_setItemStatus(&mrMenuMain, MR_ITEM_CANCELCONN,
+                    (MR_ITEM_ALL & ~MR_ITEM_CANCELCONN));
+
+  Display_printf(dispHandle, MR_ROW_NON_CONN, 0, "Connecting...");
+
+  tbm_goTo(&mrMenuMain);
+
+  return (true);
 }
+
 /*********************************************************************
-      // Set default PHY to 1M
- * @fn      SimplePeripheral_startAutoPhyChange
+ * @fn      multi_role_doSelectConn
  *
- * @brief   Start periodic RSSI reads on a link.
+ * @brief   Select a connection to communicate with
  *
- * @param   connHandle - connection handle of link
- * @param   devAddr - device address
+ * @param   index - item index from the menu
  *
- * @return  SUCCESS: Terminate started
- *          bleIncorrectMode: No link
- *          bleNoResources: No resources
+ * @return  always true
  */
-static status_t SimplePeripheral_startAutoPhyChange(uint16_t connHandle)
+bool multi_role_doSelectConn(uint8_t index)
 {
-  status_t status = FAILURE;
+  uint32_t itemsToDisable = MR_ITEM_NONE;
 
-  // Get connection index from handle
-  uint8_t connIndex = SimplePeripheral_getConnIndex(connHandle);
-  SIMPLEPERIPHERAL_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
+  // index cannot be equal to or greater than MAX_NUM_BLE_CONNS
+  MULTIROLE_ASSERT(index < MAX_NUM_BLE_CONNS);
 
-  // Start Connection Event notice for RSSI calculation
-  Gap_RegisterConnEventCb(SimplePeripheral_connEvtCB, GAP_CB_REGISTER, GAP_CB_CONN_EVENT_ALL, connHandle);
+  mrConnHandle  = connList[index].connHandle;
 
-  // Flag in connection info if successful
-  if (status == SUCCESS)
+  if (connList[index].charHandle == 0)
   {
-    connList[connIndex].isAutoPHYEnable = TRUE;
+    // Initiate service discovery
+    multi_role_enqueueMsg(MR_EVT_SVC_DISC, NULL);
+
+    // Diable GATT Read/Write until simple service is found
+    itemsToDisable = MR_ITEM_GATTREAD | MR_ITEM_GATTWRITE;
   }
 
-  return status;
+  // Set the menu title and go to this connection's context
+  TBM_SET_TITLE(&mrMenuPerConn, TBM_GET_ACTION_DESC(&mrMenuSelectConn, index));
+
+  tbm_setItemStatus(&mrMenuPerConn, MR_ITEM_NONE, itemsToDisable);
+
+  // Clear non-connection-related message
+  Display_clearLine(dispHandle, MR_ROW_NON_CONN);
+
+  tbm_goTo(&mrMenuPerConn);
+
+  return (true);
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_stopAutoPhyChange
+ * @fn      multi_role_doGattRead
  *
- * @brief   Cancel periodic RSSI reads on a link.
+ * @brief   GATT Read
  *
- * @param   connHandle - connection handle of link
+ * @param   index - item index from the menu
  *
- * @return  SUCCESS: Operation successful
- *          bleIncorrectMode: No link
+ * @return  always true
  */
-static status_t SimplePeripheral_stopAutoPhyChange(uint16_t connHandle)
+bool multi_role_doGattRead(uint8_t index)
 {
-  // Get connection index from handle
-  uint8_t connIndex = SimplePeripheral_getConnIndex(connHandle);
-  SIMPLEPERIPHERAL_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
+  attReadReq_t req;
+  uint8_t connIndex = multi_role_getConnIndex(mrConnHandle);
 
-  // Stop connection event notice
-  Gap_RegisterConnEventCb(NULL, GAP_CB_UNREGISTER, GAP_CB_CONN_EVENT_ALL, connHandle);
+  // connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
+  MULTIROLE_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
 
-  // Also update the phychange request status for active RSSI tracking connection
-  connList[connIndex].phyCngRq = FALSE;
-  connList[connIndex].isAutoPHYEnable = FALSE;
+  req.handle = connList[connIndex].charHandle;
+  GATT_ReadCharValue(mrConnHandle, &req, selfEntity);
 
-  return SUCCESS;
+  return (true);
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_setPhy
+ * @fn      multi_role_doGattWrite
+ *
+ * @brief   GATT Write
+ *
+ * @param   index - item index from the menu
+ *
+ * @return  always true
+ */
+bool multi_role_doGattWrite(uint8_t index)
+{
+  status_t status;
+  uint8_t charVals[4] = { 0x00, 0x55, 0xAA, 0xFF }; // Should be consistent with
+                                                    // those in scMenuGattWrite
+  attWriteReq_t req;
+
+  req.pValue = GATT_bm_alloc(mrConnHandle, ATT_WRITE_REQ, 1, NULL);
+
+  if ( req.pValue != NULL )
+  {
+    uint8_t connIndex = multi_role_getConnIndex(mrConnHandle);
+
+    // connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
+    MULTIROLE_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
+
+    req.handle = connList[connIndex].charHandle;
+    req.len = 1;
+    charVal = charVals[index];
+    req.pValue[0] = charVal;
+    req.sig = 0;
+    req.cmd = 0;
+
+    status = GATT_WriteCharValue(mrConnHandle, &req, selfEntity);
+    if ( status != SUCCESS )
+    {
+      GATT_bm_free((gattMsg_t *)&req, ATT_WRITE_REQ);
+    }
+  }
+
+  return (true);
+}
+
+/*********************************************************************
+* @fn      multi_role_doConnUpdate
+*
+* @brief   Respond to user input to do a connection update
+*
+* @param   index - index as selected from the mrMenuConnUpdate
+*
+* @return  TRUE since there is no callback to use this value
+*/
+bool multi_role_doConnUpdate(uint8_t index)
+{
+  gapUpdateLinkParamReq_t params;
+
+  (void) index; //may need to get the real connHandle?
+
+  params.connectionHandle = mrConnHandle;
+  params.intervalMin = DEFAULT_UPDATE_MIN_CONN_INTERVAL;
+  params.intervalMax = DEFAULT_UPDATE_MAX_CONN_INTERVAL;
+  params.connLatency = DEFAULT_UPDATE_SLAVE_LATENCY;
+
+  linkDBInfo_t linkInfo;
+  if (linkDB_GetInfo(mrConnHandle, &linkInfo) == SUCCESS)
+  {
+    if (linkInfo.connTimeout == DEFAULT_UPDATE_CONN_TIMEOUT)
+    {
+      params.connTimeout = DEFAULT_UPDATE_CONN_TIMEOUT + 200;
+    }
+    else
+    {
+      params.connTimeout = DEFAULT_UPDATE_CONN_TIMEOUT;
+    }
+
+    GAP_UpdateLinkParamReq(&params);
+
+    Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Param update Request:connTimeout =%d",
+                    params.connTimeout*CONN_TIMEOUT_MS_CONVERSION);
+  }
+  else
+  {
+
+    Display_printf(dispHandle, MR_ROW_CUR_CONN, 0,
+                   "update :%s, Unable to find link information",
+                   Util_convertBdAddr2Str(linkInfo.addr));
+  }
+
+  return (true);
+}
+
+/*********************************************************************
+ * @fn      multi_role_setPhy
  *
  * @brief   Call the HCI set phy API and and add the handle to a
  *          list to match it to an incoming command status event
  */
-static status_t SimplePeripheral_setPhy(uint16_t connHandle, uint8_t allPhys,
+static status_t multi_role_setPhy(uint16_t connHandle, uint8_t allPhys,
                                         uint8_t txPhy, uint8_t rxPhy,
                                         uint16_t phyOpts)
 {
   // Allocate list entry to store handle for command status
-  spConnHandleEntry_t *connHandleEntry = ICall_malloc(sizeof(spConnHandleEntry_t));
+  mrConnHandleEntry_t *connHandleEntry = ICall_malloc(sizeof(mrConnHandleEntry_t));
 
   if (connHandleEntry)
   {
@@ -2381,7 +3430,68 @@ static status_t SimplePeripheral_setPhy(uint16_t connHandle, uint8_t allPhys,
 }
 
 /*********************************************************************
-* @fn      SimplePeripheral_updatePHYStat
+ * @fn      multi_role_doConnPhy
+ *
+ * @brief   Set Connection PHY preference.
+ *
+ * @param   index - item number in MRMenu_connPhy list
+ *
+ * @return  always true
+ */
+bool multi_role_doConnPhy(uint8_t index)
+{
+  // Set Phy Preference on the current connection. Apply the same value
+  // for RX and TX. For more information, see the LE 2M PHY section in the User's Guide:
+  // http://software-dl.ti.com/lprf/ble5stack-latest/
+  // Note PHYs are already enabled by default in build_config.opt in stack project.
+  HCI_LE_SetPhyCmd(mrConnHandle, 0, MRMenu_connPhy[index].value, MRMenu_connPhy[index].value, 0);
+
+  Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Connection PHY preference: %s",
+                 TBM_GET_ACTION_DESC(&mrMenuConnPhy, index));
+
+  return (true);
+}
+
+/*********************************************************************
+ * @fn      multi_role_doSetInitPhy
+ *
+ * @brief   Set initialize PHY preference.
+ *
+ * @param   index - item number in MRMenu_initPhy list
+ *
+ * @return  always true
+ */
+bool multi_role_doSetInitPhy(uint8_t index)
+{
+  mrInitPhy = MRMenu_initPhy[index].value;
+  Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Initialize PHY preference: %s",
+                 TBM_GET_ACTION_DESC(&mrMenuInitPhy, index));
+
+  return (true);
+}
+
+/*********************************************************************
+ * @fn      multi_role_doSetScanPhy
+ *
+ * @brief   Set PHYs for scanning.
+ *
+ * @param   index - item number in MRMenu_scanPhy list
+ *
+ * @return  always true
+ */
+bool multi_role_doSetScanPhy(uint8_t index)
+{
+  // Set scanning primary PHY
+  GapScan_setParam(SCAN_PARAM_PRIM_PHYS, &MRMenu_scanPhy[index].value);
+
+  Display_printf(dispHandle, MR_ROW_NON_CONN, 0, "Primary Scan PHY: %s",
+                 TBM_GET_ACTION_DESC(&mrMenuScanPhy, index));
+
+  return (true);
+}
+
+/*********************************************************************
+* @fn      multi_role_updatePHYStat
 *
 * @brief   Update the auto phy update state machine
 *
@@ -2389,7 +3499,7 @@ static status_t SimplePeripheral_setPhy(uint16_t connHandle, uint8_t allPhys,
 *
 * @return  None
 */
-static void SimplePeripheral_updatePHYStat(uint16_t eventCode, uint8_t *pMsg)
+static void multi_role_updatePHYStat(uint16_t eventCode, uint8_t *pMsg)
 {
   uint8_t connIndex;
 
@@ -2398,13 +3508,13 @@ static void SimplePeripheral_updatePHYStat(uint16_t eventCode, uint8_t *pMsg)
     case HCI_LE_SET_PHY:
     {
       // Get connection handle from list
-      spConnHandleEntry_t *connHandleEntry =
-                           (spConnHandleEntry_t *)List_get(&setPhyCommStatList);
+      mrConnHandleEntry_t *connHandleEntry =
+                           (mrConnHandleEntry_t *)List_get(&setPhyCommStatList);
 
       if (connHandleEntry)
       {
         // Get index from connection handle
-        connIndex = SimplePeripheral_getConnIndex(connHandleEntry->connHandle);
+        connIndex = multi_role_getConnIndex(connHandleEntry->connHandle);
 
         ICall_free(connHandleEntry);
 
@@ -2433,7 +3543,7 @@ static void SimplePeripheral_updatePHYStat(uint16_t eventCode, uint8_t *pMsg)
       if(pPUC)
       {
         // Get index from connection handle
-        connIndex = SimplePeripheral_getConnIndex(pPUC->connHandle);
+        connIndex = multi_role_getConnIndex(pPUC->connHandle);
 
         // Is this connection still valid?
         if (connIndex < MAX_NUM_BLE_CONNS)
@@ -2467,7 +3577,115 @@ static void SimplePeripheral_updatePHYStat(uint16_t eventCode, uint8_t *pMsg)
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_menuSwitchCb
+ * @fn      multi_role_doSetAdvPhy
+ *
+ * @brief   Set advertise PHY preference.
+ *
+ * @param   index - item number in MRMenu_advPhy list
+ *
+ * @return  always true
+ */
+bool multi_role_doSetAdvPhy(uint8_t index)
+{
+  uint16_t props;
+  GapAdv_primaryPHY_t phy;
+  bool isAdvActive = mrIsAdvertising;
+
+  switch (MRMenu_advPhy[index].value)
+  {
+    case MR_ADV_LEGACY_PHY_1_MBPS:
+        props = GAP_ADV_PROP_CONNECTABLE | GAP_ADV_PROP_SCANNABLE | GAP_ADV_PROP_LEGACY;
+        phy = GAP_ADV_PRIM_PHY_1_MBPS;
+    break;
+    case MR_ADV_EXT_PHY_1_MBPS:
+        props = GAP_ADV_PROP_CONNECTABLE;
+        phy = GAP_ADV_PRIM_PHY_1_MBPS;
+    break;
+    case MR_ADV_EXT_PHY_CODED:
+        props = GAP_ADV_PROP_CONNECTABLE;
+        phy = GAP_ADV_PRIM_PHY_CODED_S2;
+    break;
+    default:
+        return (false);
+  }
+  if (isAdvActive)
+  {
+    // Turn off advertising
+    GapAdv_disable(advHandle);
+  }
+  GapAdv_setParam(advHandle,GAP_ADV_PARAM_PROPS,&props);
+  GapAdv_setParam(advHandle,GAP_ADV_PARAM_PRIMARY_PHY,&phy);
+  GapAdv_setParam(advHandle,GAP_ADV_PARAM_SECONDARY_PHY,&phy);
+  if (isAdvActive)
+  {
+    // Turn on advertising
+    GapAdv_enable(advHandle, GAP_ADV_ENABLE_OPTIONS_USE_MAX , 0);
+  }
+
+  Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Advertise PHY preference: %s",
+                 TBM_GET_ACTION_DESC(&mrMenuAdvPhy, index));
+
+  return (true);
+}
+
+/*********************************************************************
+* @fn      multi_role_doDisconnect
+*
+* @brief   Respond to user input to terminate a connection
+*
+* @param   index - index as selected from the mrMenuConnUpdate
+*
+* @return  always true
+*/
+bool multi_role_doDisconnect(uint8_t index)
+{
+  (void) index;
+
+  // Disconnect
+  GAP_TerminateLinkReq(mrConnHandle, HCI_DISCONNECT_REMOTE_USER_TERM);
+
+  return (true);
+}
+
+/*********************************************************************
+* @fn      multi_role_doAdvertise
+*
+* @brief   Respond to user input to terminate a connection
+*
+* @param   index - index as selected from the mrMenuConnUpdate
+*
+* @return  always true
+*/
+bool multi_role_doAdvertise(uint8_t index)
+{
+  (void) index;
+
+  // If we're currently advertising
+  if (mrIsAdvertising)
+  {
+    // Turn off advertising
+    GapAdv_disable(advHandle);
+  }
+  // If we're not currently advertising
+  else
+  {
+    if (numConn < MAX_NUM_BLE_CONNS)
+    {
+      // Start advertising since there is room for more connections
+      GapAdv_enable(advHandle, GAP_ADV_ENABLE_OPTIONS_USE_MAX , 0);
+    }
+    else
+    {
+      Display_printf(dispHandle, MR_ROW_ADVERTIS, 0,
+                     "At Maximum Connection Limit, Cannot Enable Advertisment");
+    }
+  }
+
+  return (true);
+}
+
+/*********************************************************************
+ * @fn      multi_role_menuSwitchCb
  *
  * @brief   Detect menu context switching
  *
@@ -2476,14 +3694,36 @@ static void SimplePeripheral_updatePHYStat(uint16_t eventCode, uint8_t *pMsg)
  *
  * @return  none
  */
-static void SimplePeripheral_menuSwitchCb(tbmMenuObj_t* pMenuObjCurr,
-                                       tbmMenuObj_t* pMenuObjNext)
+static void multi_role_menuSwitchCb(tbmMenuObj_t* pMenuObjCurr,
+                                    tbmMenuObj_t* pMenuObjNext)
 {
-  uint8_t NUMB_ACTIVE_CONNS = linkDB_NumActive();
-
   // interested in only the events of
-  // entering scMenuConnect, spMenuSelectConn, and scMenuMain for now
-  if (pMenuObjNext == &spMenuSelectConn)
+  // entering mrMenuConnect, mrMenuSelectConn, and mrMenuMain for now
+  if (pMenuObjNext == &mrMenuConnect)
+  {
+    uint8_t i, j;
+    uint32_t itemsToDisable = MR_ITEM_NONE;
+
+    for (i = 0; i < TBM_GET_NUM_ITEM(&mrMenuConnect); i++)
+    {
+      for (j = 0; j < MAX_NUM_BLE_CONNS; j++)
+      {
+        if ((connList[j].connHandle != LINKDB_CONNHANDLE_INVALID) &&
+            !memcmp(TBM_GET_ACTION_DESC(&mrMenuConnect, i),
+                    Util_convertBdAddr2Str(connList[j].addr),
+                    MR_ADDR_STR_SIZE))
+        {
+          // Already connected. Add to the set to be disabled.
+          itemsToDisable |= (1 << i);
+        }
+      }
+    }
+
+    // Eventually only non-connected device addresses will be displayed.
+    tbm_setItemStatus(&mrMenuConnect,
+                      MR_ITEM_ALL & ~itemsToDisable, itemsToDisable);
+  }
+  else if (pMenuObjNext == &mrMenuSelectConn)
   {
     static uint8_t* pAddrs;
     uint8_t* pAddrTemp;
@@ -2494,17 +3734,17 @@ static void SimplePeripheral_menuSwitchCb(tbmMenuObj_t* pMenuObjCurr,
     }
 
     // Allocate buffer to display addresses
-    pAddrs = ICall_malloc(NUMB_ACTIVE_CONNS * SP_ADDR_STR_SIZE);
+    pAddrs = ICall_malloc(numConn * MR_ADDR_STR_SIZE);
 
     if (pAddrs == NULL)
     {
-      TBM_SET_NUM_ITEM(&spMenuSelectConn, 0);
+      TBM_SET_NUM_ITEM(&mrMenuSelectConn, 0);
     }
     else
     {
       uint8_t i;
 
-      TBM_SET_NUM_ITEM(&spMenuSelectConn, MAX_NUM_BLE_CONNS);
+      TBM_SET_NUM_ITEM(&mrMenuSelectConn, MAX_NUM_BLE_CONNS);
 
       pAddrTemp = pAddrs;
 
@@ -2513,36 +3753,34 @@ static void SimplePeripheral_menuSwitchCb(tbmMenuObj_t* pMenuObjCurr,
       {
         if (connList[i].connHandle != LINKDB_CONNHANDLE_INVALID)
         {
-          // Get the address from the connection handle
-          linkDBInfo_t linkInfo;
-          linkDB_GetInfo(connList[i].connHandle, &linkInfo);
           // This connection is active. Set the corresponding menu item with
           // the address of this connection and enable the item.
-          memcpy(pAddrTemp, Util_convertBdAddr2Str(linkInfo.addr),
-                 SP_ADDR_STR_SIZE);
-          TBM_SET_ACTION_DESC(&spMenuSelectConn, i, pAddrTemp);
-          tbm_setItemStatus(&spMenuSelectConn, (1 << i), SP_ITEM_NONE);
-          pAddrTemp += SP_ADDR_STR_SIZE;
+          memcpy(pAddrTemp, Util_convertBdAddr2Str(connList[i].addr),
+                 MR_ADDR_STR_SIZE);
+          TBM_SET_ACTION_DESC(&mrMenuSelectConn, i, pAddrTemp);
+          tbm_setItemStatus(&mrMenuSelectConn, (1 << i), MR_ITEM_NONE);
+          pAddrTemp += MR_ADDR_STR_SIZE;
         }
         else
         {
           // This connection is not active. Disable the corresponding menu item.
-          tbm_setItemStatus(&spMenuSelectConn, SP_ITEM_NONE, (1 << i));
+          tbm_setItemStatus(&mrMenuSelectConn, MR_ITEM_NONE, (1 << i));
         }
       }
     }
   }
-  else if (pMenuObjNext == &spMenuMain)
+  else if (pMenuObjNext == &mrMenuMain)
   {
     // Now we are not in a specific connection's context
+    mrConnHandle = LINKDB_CONNHANDLE_INVALID;
 
     // Clear connection-related message
-    Display_clearLine(dispHandle, SP_ROW_CONNECTION);
+    Display_clearLine(dispHandle, MR_ROW_CUR_CONN);
   }
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_processOadResetEvt
+ * @fn      multi_role_processOadResetEvt
  *
  * @brief   Process a write request to the OAD reset service
  *
@@ -2550,7 +3788,7 @@ static void SimplePeripheral_menuSwitchCb(tbmMenuObj_t* pMenuObjCurr,
  *
  * @return  None.
  */
-static void SimplePeripheral_processOadResetEvt(oadResetWrite_t *resetEvt)
+static void multi_role_processOadResetEvt(oadResetWrite_t *resetEvt)
 {
   /* We cannot reboot the device immediately after receiving
    * the enable command, we must allow the stack enough time
@@ -2582,7 +3820,7 @@ static void SimplePeripheral_processOadResetEvt(oadResetWrite_t *resetEvt)
 }
 
 /*********************************************************************
- * @fn      SimplePeripheral_processOadResetWriteCB
+ * @fn      multi_role_processOadResetWriteCB
  *
  * @brief   Process a write request to the OAD reset service
  *
@@ -2591,7 +3829,7 @@ static void SimplePeripheral_processOadResetEvt(oadResetWrite_t *resetEvt)
  *
  * @return  None.
  */
-void SimplePeripheral_processOadResetWriteCB(uint16_t connHandle,
+void multi_role_processOadResetWriteCB(uint16_t connHandle,
                                       uint16_t bim_var)
 {
     // Allocate memory for OAD EVT payload, the app task must free this later
@@ -2601,7 +3839,7 @@ void SimplePeripheral_processOadResetWriteCB(uint16_t connHandle,
     oadResetWriteEvt->bim_var = bim_var;
 
     // This function will enqueue the messsage and wake the application
-    SimplePeripheral_enqueueMsg(SP_OAD_RESET_EVT, (uint8_t *)oadResetWriteEvt);
+    multi_role_enqueueMsg(MR_OAD_RESET_EVT, (uint8_t *)oadResetWriteEvt);
 }
 
 /*********************************************************************

@@ -1,6 +1,6 @@
 /******************************************************************************
 
- @file  simple_peripheral_oad_onchip_menu.h
+ @file  multi_role_menu.h
 
  @brief This file contains macros, type definitions, and function prototypes
         for two-button menu implementation.
@@ -10,7 +10,7 @@
 
  ******************************************************************************
  
- Copyright (c) 2017-2023, Texas Instruments Incorporated
+ Copyright (c) 2016-2023, Texas Instruments Incorporated
  All rights reserved.
 
  Redistribution and use in source and binary forms, with or without
@@ -45,24 +45,49 @@
  
  *****************************************************************************/
 
-#ifndef OFFCHIP_USR_APP_MENU_H
-#define OFFCHIP_USR_APP_MENU_H
+#ifndef MULTI_ROLE_MENU_H
+#define MULTI_ROLE_MENU_H
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
-  
-#include "two_btn_menu.h"
 
-// Menu item indices.
-#define SP_ITEM_NONE            TBM_ITEM_NONE
-#define SP_ITEM_ALL             TBM_ITEM_ALL
+// Duplicate menu item indices.
+#define MR_ITEM_NONE        TBM_ITEM_NONE
+#define MR_ITEM_ALL         TBM_ITEM_ALL
 
-// Note: The defines should be updated accordingly if there is any change
-//       in the order of the items of the menu objects the items belong to.
-#define SP_ITEM_SELECT_CONN     TBM_ITEM(1)  // "Work with"
-#define SP_ITEM_SELECT_OAD_DBG  TBM_ITEM(2)  // "OAD Debug"
+
+#define MR_ITEM_STARTDISC      TBM_ITEM(0)  // "Discover Devices"
+#define MR_ITEM_STOPDISC       TBM_ITEM(1)  // "Stop Discovering"
+#define MR_ITEM_CONNECT        TBM_ITEM(2)  // "Connect To"
+#define MR_ITEM_CANCELCONN     TBM_ITEM(3)  // "Cancel Connecting"
+#define MR_ITEM_SELECTCONN     TBM_ITEM(4)  // "Work With"
+#define MR_ITEM_ADVERTISE      TBM_ITEM(5)  // "Advertise"
+#define MR_ITEM_PHY            TBM_ITEM(6)  // "PHY"
+
+#define MR_ITEM_GATTREAD    TBM_ITEM(0)  // "GATT Read"
+#define MR_ITEM_GATTWRITE   TBM_ITEM(1)  // "GATT Write"
+#define MR_ITEM_UPDATE      TBM_ITEM(2)  // "Connection Update"
+#define MR_ITEM_CONNPHY     TBM_ITEM(3)  // "Set Connection PHY"
+#define MR_ITEM_DISCONNECT  TBM_ITEM(4)  // "Disconnect"
+
+#define MRMENU_ITEM_MAX_LEN     32
+typedef struct MRMenu_ItemList_t_
+{
+    uint8       str[MRMENU_ITEM_MAX_LEN];
+    int32_t     value;
+}MRMenu_ItemList_t;
+
+#define MRMENU_CONNPHY_SIZE 5
+#define MRMENU_INITPHY_SIZE 6
+#define MRMENU_SCANPHY_SIZE 3
+#define MRMENU_ADVPHY_SIZE 3
+
+extern MRMenu_ItemList_t MRMenu_connPhy[MRMENU_CONNPHY_SIZE]; 
+extern MRMenu_ItemList_t MRMenu_initPhy[MRMENU_INITPHY_SIZE];
+extern MRMenu_ItemList_t MRMenu_scanPhy[MRMENU_SCANPHY_SIZE];
+extern MRMenu_ItemList_t MRMenu_advPhy[MRMENU_ADVPHY_SIZE];
 
 
 /*
@@ -70,25 +95,22 @@ extern "C"
  */
 
 /* Main Menu Object */
-extern tbmMenuObj_t spMenuMain;
+extern tbmMenuObj_t mrMenuMain;
+extern tbmMenuObj_t mrMenuConnect;
+extern tbmMenuObj_t mrMenuSelectConn;
+extern tbmMenuObj_t mrMenuPerConn;
+extern tbmMenuObj_t mrMenuGattWrite;
+extern tbmMenuObj_t mrMenuPhy;
+extern tbmMenuObj_t mrMenuAdvPhy;
+extern tbmMenuObj_t mrMenuScanPhy;
+extern tbmMenuObj_t mrMenuInitPhy;
+extern tbmMenuObj_t mrMenuConnPhy;
 
-/* Items of (Main) */
-/* Action items are defined in simple_peripheral_menu.c */
-
-/*
- * Menus Declarations
- */
-
-/* Main Menu Object */
-extern tbmMenuObj_t spMenuMain;
-extern tbmMenuObj_t spMenuSelectConn;
-extern tbmMenuObj_t spMenuPerConn;
-extern tbmMenuObj_t spMenuConnPhy;
-
-void SimplePeripheral_buildMenu(void);
+void multi_role_build_menu(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* OFFCHIP_USR_APP_MENU_H */
+#endif /* MULTI_ROLE_MENU_H */
+

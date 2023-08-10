@@ -49,6 +49,7 @@ const Timestamp    = scripting.addModule("/ti/sysbios/runtime/Timestamp");
  * Write custom configuration values to the imported modules.
  */
 ble.deviceRole                                            = "PERIPHERAL_CFG+CENTRAL_CFG";
+ble.deviceName                                            = "CentralPeripheral";
 ble.radioConfig.codeExportConfig.$name                    = "ti_devices_radioconfig_code_export_param0";
 ble.advSet1.$name                                         = "ti_ble5stack_broadcaster_advertisement_set0";
 ble.advSet1.advParam1.$name                               = "ti_ble5stack_broadcaster_advertisement_params0";
@@ -56,9 +57,9 @@ ble.advSet1.advData1.$name                                = "ti_ble5stack_broadc
 ble.advSet1.advData1.GAP_ADTYPE_FLAGS                     = true;
 ble.advSet1.advData1.advertisingFlags                     = ["GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED","GAP_ADTYPE_FLAGS_GENERAL"];
 ble.advSet1.advData1.GAP_ADTYPE_16BIT_MORE                = true;
-ble.advSet1.advData1.numOfUUIDs16More                     = 2;
-ble.advSet1.advData1.UUID016More                          = 0xFFC0;
 ble.advSet1.advData1.UUID116More                          = 0xFFF0;
+ble.advSet1.advData1.numOfUUIDs16More                     = 1;
+ble.advSet1.advData1.UUID016More                          = 0xFFF0;
 ble.advSet1.scanRes1.$name                                = "ti_ble5stack_broadcaster_advertisement_data1";
 ble.advSet1.scanRes1.GAP_ADTYPE_LOCAL_NAME_COMPLETE       = true;
 ble.advSet1.scanRes1.GAP_ADTYPE_POWER_LEVEL               = true;

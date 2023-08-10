@@ -188,7 +188,7 @@ int main()
   ICall_createRemoteTasks();
 #endif
 
-  SimplePeripheral_createTask();
+  multi_role_createTask();
 
   /* enable interrupts and start SYS/BIOS */
   BIOS_start();
