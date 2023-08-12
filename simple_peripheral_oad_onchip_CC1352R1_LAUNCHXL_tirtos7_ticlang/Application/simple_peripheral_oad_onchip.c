@@ -1771,6 +1771,9 @@ static void multi_role_processAppMsg(mrEvt_t *pMsg)
         multi_role_addScanInfo(pAdvRpt->addr, pAdvRpt->addrType);
         Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Discovered: %s",
                        Util_convertBdAddr2Str(pAdvRpt->addr));
+        test_uart_puts("Discovered: ");
+        test_uart_puts(Util_convertBdAddr2Str(pAdvRpt->addr));
+        test_uart_puts("\n");
       }
 #else // !DEFAULT_DEV_DISC_BY_SVC_UUID
       Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Discovered: %s",
@@ -3029,6 +3032,8 @@ bool multi_role_doDiscoverDevices(uint8_t index)
   tbm_setItemStatus(&mrMenuMain, MR_ITEM_STOPDISC,
                     (MR_ITEM_ALL & ~MR_ITEM_STOPDISC));
 
+  test_uart_puts("Discovering...\n");
+
   return (true);
 }
 
@@ -3046,6 +3051,8 @@ bool multi_role_doStopDiscovering(uint8_t index)
   (void) index;
 
   GapScan_disable();
+
+  test_uart_puts("Stopped Discovering\n");
 
   return (true);
 }
@@ -3247,6 +3254,8 @@ bool multi_role_doConnect(uint8_t index)
                     (MR_ITEM_ALL & ~MR_ITEM_CANCELCONN));
 
   Display_printf(dispHandle, MR_ROW_NON_CONN, 0, "Connecting...");
+
+  test_uart_puts("Connecting...\n");
 
   tbm_goTo(&mrMenuMain);
 

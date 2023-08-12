@@ -105,6 +105,8 @@ void test_uart_init(void)
 
 }
 
+#include "simple_peripheral_oad_onchip.h"
+
 void test_uart_loop(void)
 {
     int status           = UART2_STATUS_SUCCESS;
@@ -124,7 +126,7 @@ void test_uart_loop(void)
             GPIO_toggle(CONFIG_GPIO_GLED);
         }
         
-        if (input == '1')
+        if (input == '0')
         {
             bytesWritten = 0;
             while (bytesWritten == 0)
@@ -132,6 +134,29 @@ void test_uart_loop(void)
                 status = UART2_write(uart_1, "hello world\r\n", 13, &bytesWritten);
                 GPIO_toggle(CONFIG_GPIO_GLED);
             }
+        }
+        switch (input)
+        {
+            case '1':
+            {
+                multi_role_doDiscoverDevices(0);
+                break;
+            }
+
+            case '2':
+            {
+                multi_role_doStopDiscovering(0);
+                break;
+            }
+
+            case '3':
+            {
+                multi_role_doConnect(0);
+                break;
+            }
+        
+            default:
+                break;
         }
     }
 

@@ -59,6 +59,7 @@ int apps(void)
 }
 
 #include "test_uart.h"
+#include "simple_peripheral_oad_onchip.h"
 
 #include <ti/drivers/NVS.h>
 
@@ -89,12 +90,12 @@ void test_nvs_init()
 
     if (nvsHandle == NULL)
     {
-        Display_printf("NVS_open() failed.");
+        test_uart_puts("NVS_open() failed.");
 
         return ;
     }
 
-    Display_printf("\n");
+    test_uart_puts("\n");
 
     /*
      * This will populate a NVS_Attrs structure with properties specific
@@ -104,9 +105,14 @@ void test_nvs_init()
     NVS_getAttrs(nvsHandle, &regionAttrs);
 
     /* Display the NVS region attributes */
-    Display_printf("Region Base Address: 0x%x", regionAttrs.regionBase);
-    Display_printf("Sector Size: 0x%x", regionAttrs.sectorSize);
-    Display_printf("Region Size: 0x%x\n", regionAttrs.regionSize);
+    char tmp[64] = {0};
+    sprintf(tmp, "Region Base Address: 0x%x", regionAttrs.regionBase);
+    test_uart_puts(tmp);
+    sprintf(tmp, "Sector Size: 0x%x", regionAttrs.sectorSize);
+    test_uart_puts(tmp);
+    sprintf(tmp, "Region Size: 0x%x\n", regionAttrs.regionSize);
+    test_uart_puts(tmp);
+    
 
     /*
      * Copy "sizeof(signature)" bytes from the NVS region base address into
@@ -123,7 +129,10 @@ void test_nvs_init()
     {
 
         /* Write signature directly from the NVS region to the UART console. */
-        Display_printf("%s", regionAttrs.regionBase);
+        // test_uart_puts("%s", regionAttrs.regionBase);
+        char tmp[64] = {0};
+        sprintf(tmp, "%s", regionAttrs.regionBase);
+        test_uart_puts(tmp);
 
         /* Erase the entire flash sector. */
         NVS_erase(nvsHandle, 0, regionAttrs.sectorSize);
@@ -132,7 +141,7 @@ void test_nvs_init()
     {
 
         /* The signature was not found in the NVS region. */
-        Display_printf("Writing signature to flash...");
+        test_uart_puts("Writing signature to flash...\n");
 
         /* Write signature to memory. The flash sector is erased prior
          * to performing the write operation. This is specified by
@@ -150,8 +159,8 @@ void test_nvs_init()
  */
 void *mainThread(void *arg0)
 {
-    test_nvs_init();
     test_uart_init();
+    test_nvs_init();
     while (1)
     {
        test_uart_loop();

@@ -86,7 +86,7 @@ bool multi_role_doDiscoverDevices(uint8_t index);
 bool multi_role_doStopDiscovering(uint8_t index);
 
 /* Actions for Menu: Init - Connect */
-bool multi_role_doConnect(uint8 index);
+bool multi_role_doConnect(uint8_t index);
 
 /* Action for Menu: Cancel Connecting */
 bool multi_role_doCancelConnecting(uint8_t index);
@@ -106,10 +106,10 @@ bool multi_role_doGattWrite(uint8_t index);
 bool multi_role_doConnUpdate(uint8_t index);
 
 /* Actions for Menu: Init - Disconnect */
-bool multi_role_doDisconnect(uint8 index);
+bool multi_role_doDisconnect(uint8_t index);
 
 /* Actions for Menu: Init - Advertise */
-bool mr_doAdvertise(uint8 index);
+bool mr_doAdvertise(uint8_t index);
 
 /* Action for Menu: Set Scanning PHY */
 bool multi_role_doSetScanPhy(uint8_t index);
