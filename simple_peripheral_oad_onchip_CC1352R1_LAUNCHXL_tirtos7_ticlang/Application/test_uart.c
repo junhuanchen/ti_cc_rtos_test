@@ -9,45 +9,48 @@
 /* Driver configuration */
 #include "ti_drivers_config.h"
 
-/*
- * The following function is from good old K & R.
- */
-static void reverse(char s[])
-{
-    int i, j;
-    char c;
-
-    for (i = 0, j = strlen(s) - 1; i < j; i++, j--)
-    {
-        c    = s[i];
-        s[i] = s[j];
-        s[j] = c;
-    }
-}
+#include "simple_peripheral_oad_onchip.h"
+#include "gap_scanner.h"
 
 /*
  * The following function is from good old K & R.
  */
-static void itoa(int n, char s[])
-{
-    int i, sign;
+// static void reverse(char s[])
+// {
+//     int i, j;
+//     char c;
 
-    if ((sign = n) < 0) /* record sign */
-    {
-        n = -n; /* make n positive */
-    }
-    i = 0;
-    do
-    {                          /* generate digits in reverse order */
-        s[i++] = n % 10 + '0'; /* get next digit */
-    } while ((n /= 10) > 0);   /* delete it */
-    if (sign < 0)
-    {
-        s[i++] = '-';
-    }
-    s[i] = '\0';
-    reverse(s);
-}
+//     for (i = 0, j = strlen(s) - 1; i < j; i++, j--)
+//     {
+//         c    = s[i];
+//         s[i] = s[j];
+//         s[j] = c;
+//     }
+// }
+
+/*
+ * The following function is from good old K & R.
+ */
+// static void itoa(int n, char s[])
+// {
+//     int i, sign;
+
+//     if ((sign = n) < 0) /* record sign */
+//     {
+//         n = -n; /* make n positive */
+//     }
+//     i = 0;
+//     do
+//     {                          /* generate digits in reverse order */
+//         s[i++] = n % 10 + '0'; /* get next digit */
+//     } while ((n /= 10) > 0);   /* delete it */
+//     if (sign < 0)
+//     {
+//         s[i++] = '-';
+//     }
+//     s[i] = '\0';
+//     reverse(s);
+// }
 
 char input;
 char tempStr[256] = "\r\nhello world\r\n";
@@ -64,6 +67,12 @@ void test_uart_puts(char *str)
     while (bytesWritten == 0)
     {
         UART2_write(uart_1, str, strlen(str), &bytesWritten);
+    }
+    // "\r\n"
+    bytesWritten = 0;
+    while (bytesWritten == 0)
+    {
+        UART2_write(uart_1, "\r\n", 2, &bytesWritten);
     }
 }
 
@@ -105,8 +114,6 @@ void test_uart_init(void)
 
 }
 
-#include "simple_peripheral_oad_onchip.h"
-
 void test_uart_loop(void)
 {
     int status           = UART2_STATUS_SUCCESS;
@@ -135,29 +142,68 @@ void test_uart_loop(void)
                 GPIO_toggle(CONFIG_GPIO_GLED);
             }
         }
-        switch (input)
+
+        if (input == '1')
         {
-            case '1':
-            {
-                multi_role_doDiscoverDevices(0);
-                break;
-            }
-
-            case '2':
-            {
-                multi_role_doStopDiscovering(0);
-                break;
-            }
-
-            case '3':
-            {
-                multi_role_doConnect(0);
-                break;
-            }
-        
-            default:
-                break;
+            GapScan_enable(0, 100, 15);
+            test_uart_puts("Discovering...\r\n");
         }
+
+        if (input == '2')
+        {
+            GapScan_disable();
+            test_uart_puts("Stopped Discovering\r\n");
+        }
+        
+        if (input == '4')
+        {
+            GapScan_Evt_AdvRpt_t advRpt;
+
+            GapScan_getAdvReport(0, &advRpt);
+            
+            char tmp[64] = {0};
+            sprintf(tmp, "mac: %02x:%02x:%02x:%02x:%02x:%02x\r\n", advRpt.addr[0], advRpt.addr[1], advRpt.addr[2], advRpt.addr[3], advRpt.addr[4], advRpt.addr[5]);
+            test_uart_puts(tmp);
+
+            GapInit_connect(advRpt.addrType & 0x01, advRpt.addr, 0x01, 0);
+
+            // multi_role_doConnUpdate(0);
+            // test_uart_puts("Connection Update Request\r\n");
+        }
+        
+        if (input == '3')
+        {
+            // Temporarily disable advertising
+            extern uint8_t advHandle;
+            GapAdv_disable(advHandle);
+
+            // Scanned device information record
+            typedef struct
+            {
+                uint8_t addrType;         // Peer Device's Address Type
+                uint8_t addr[6]; // Peer Device Address
+            } scanRec_t;
+
+            scanRec_t advRpt; // 09:df:00:71:77:60 addrType 0 
+            advRpt.addrType = 0;
+            advRpt.addr[0] = 0x09;
+            advRpt.addr[1] = 0xdf;
+            advRpt.addr[2] = 0x00;
+            advRpt.addr[3] = 0x71;
+            advRpt.addr[4] = 0x77;
+            advRpt.addr[5] = 0x60;
+
+            GapInit_connect(advRpt.addrType & 0x01, advRpt.addr, 0x01, 0);
+
+            char tmp[64];
+            sprintf(tmp, "Connecting to %02x:%02x:%02x:%02x:%02x:%02x\r\n", advRpt.addr[0], advRpt.addr[1], advRpt.addr[2], advRpt.addr[3], advRpt.addr[4], advRpt.addr[5]);
+            test_uart_puts(tmp);
+
+            // Re-enable advertising
+            GapAdv_enable(advHandle, 0, 0);
+            
+        }
+
     }
 
 }

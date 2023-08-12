@@ -105,13 +105,13 @@ void test_nvs_init()
     NVS_getAttrs(nvsHandle, &regionAttrs);
 
     /* Display the NVS region attributes */
-    char tmp[64] = {0};
-    sprintf(tmp, "Region Base Address: 0x%x", regionAttrs.regionBase);
-    test_uart_puts(tmp);
-    sprintf(tmp, "Sector Size: 0x%x", regionAttrs.sectorSize);
-    test_uart_puts(tmp);
-    sprintf(tmp, "Region Size: 0x%x\n", regionAttrs.regionSize);
-    test_uart_puts(tmp);
+    // char tmp[64] = {0};
+    // sprintf(tmp, "Region Base Address: 0x%x\n", regionAttrs.regionBase);
+    // test_uart_puts(tmp);
+    // sprintf(tmp, "Sector Size: 0x%x\n", regionAttrs.sectorSize);
+    // test_uart_puts(tmp);
+    // sprintf(tmp, "Region Size: 0x%x\n", regionAttrs.regionSize);
+    // test_uart_puts(tmp);
     
 
     /*
@@ -160,7 +160,7 @@ void test_nvs_init()
 void *mainThread(void *arg0)
 {
     test_uart_init();
-    test_nvs_init();
+    // test_nvs_init();
     while (1)
     {
        test_uart_loop();
