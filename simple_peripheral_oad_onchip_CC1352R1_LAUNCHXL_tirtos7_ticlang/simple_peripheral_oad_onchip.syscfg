@@ -22,13 +22,14 @@ const AESECB1      = AESECB.addInstance();
 const ECDH         = scripting.addModule("/ti/drivers/ECDH");
 const ECDH1        = ECDH.addInstance();
 const GPIO         = scripting.addModule("/ti/drivers/GPIO");
+const GPIO1        = GPIO.addInstance();
+const GPIO2        = GPIO.addInstance();
 const GPIO3        = GPIO.addInstance();
 const GPIO4        = GPIO.addInstance();
-const GPIO5        = GPIO.addInstance();
-const GPIO6        = GPIO.addInstance();
 const NVS          = scripting.addModule("/ti/drivers/NVS");
 const NVS1         = NVS.addInstance();
 const NVS2         = NVS.addInstance();
+const NVS3         = NVS.addInstance();
 const Power        = scripting.addModule("/ti/drivers/Power");
 const RF           = scripting.addModule("/ti/drivers/RF");
 const TRNG         = scripting.addModule("/ti/drivers/TRNG");
@@ -51,6 +52,7 @@ const Timestamp    = scripting.addModule("/ti/sysbios/runtime/Timestamp");
 ble.deviceRole                                            = "PERIPHERAL_CFG+CENTRAL_CFG";
 ble.deviceName                                            = "CentralPeripheral";
 ble.radioConfig.codeExportConfig.$name                    = "ti_devices_radioconfig_code_export_param0";
+ble.connUpdateParamsPeripheral.$name                      = "ti_ble5stack_general_ble_conn_update_params1";
 ble.advSet1.$name                                         = "ti_ble5stack_broadcaster_advertisement_set0";
 ble.advSet1.advParam1.$name                               = "ti_ble5stack_broadcaster_advertisement_params0";
 ble.advSet1.advData1.$name                                = "ti_ble5stack_broadcaster_advertisement_data0";
@@ -76,7 +78,6 @@ ble.advSet2.advData2.UUID016More                          = 0xFFC0;
 ble.advSet2.advData2.UUID116More                          = 0xFFF0;
 ble.advSet2.scanRes2.$name                                = "ti_ble5stack_broadcaster_advertisement_data3";
 ble.connUpdateParamsCentral.$name                         = "ti_ble5stack_general_ble_conn_update_params0";
-ble.connUpdateParamsPeripheral.$name                      = "ti_ble5stack_general_ble_conn_update_params1";
 
 CCFG.enableCodeGeneration = false;
 
@@ -98,27 +99,30 @@ AESECB1.$name = "CONFIG_AESECB0";
 
 ECDH1.$name = "CONFIG_ECDH0";
 
-GPIO3.$hardware = system.deviceData.board.components["BTN-1"];
-GPIO3.$name     = "CONFIG_GPIO_BTN1";
+GPIO1.$hardware = system.deviceData.board.components["BTN-1"];
+GPIO1.$name     = "CONFIG_GPIO_BTN1";
 
-GPIO4.$hardware = system.deviceData.board.components["BTN-2"];
-GPIO4.$name     = "CONFIG_GPIO_BTN2";
+GPIO2.$hardware = system.deviceData.board.components["BTN-2"];
+GPIO2.$name     = "CONFIG_GPIO_BTN2";
 
-GPIO5.$name     = "CONFIG_GPIO_RLED";
-GPIO5.$hardware = system.deviceData.board.components.LED_RED;
+GPIO3.$name     = "CONFIG_GPIO_RLED";
+GPIO3.$hardware = system.deviceData.board.components.LED_RED;
 
-GPIO6.$name     = "CONFIG_GPIO_GLED";
-GPIO6.$hardware = system.deviceData.board.components.LED_GREEN;
+GPIO4.$name     = "CONFIG_GPIO_GLED";
+GPIO4.$hardware = system.deviceData.board.components.LED_GREEN;
 
 NVS1.$name                    = "CONFIG_NVSINTERNAL";
 NVS1.internalFlash.$name      = "ti_drivers_nvs_NVSCC26XX0";
 NVS1.internalFlash.regionBase = 0x34000;
-NVS1.internalFlash.regionSize = 0x4000;
 
 NVS2.$name                    = "CONFIG_NVSINTERNAL1";
 NVS2.internalFlash.$name      = "ti_drivers_nvs_NVSCC26XX1";
 NVS2.internalFlash.regionSize = 0x34000;
 NVS2.internalFlash.regionType = "Pointer";
+
+NVS3.$name                    = "CONFIG_NVS_0";
+NVS3.internalFlash.$name      = "ti_drivers_nvs_NVSCC26XX2";
+NVS3.internalFlash.regionBase = 0x36000;
 
 TRNG1.$name = "CONFIG_TRNG_0";
 
@@ -172,8 +176,8 @@ System.supportModule   = "SysCallback";
 Display1.uart.uart.$suggestSolution       = "UART0";
 Display1.uart.uart.txPin.$suggestSolution = "boosterpack.4";
 Display1.uart.uart.rxPin.$suggestSolution = "boosterpack.3";
-GPIO3.gpioPin.$suggestSolution            = "boosterpack.13";
-GPIO4.gpioPin.$suggestSolution            = "boosterpack.12";
-GPIO5.gpioPin.$suggestSolution            = "boosterpack.39";
-GPIO6.gpioPin.$suggestSolution            = "boosterpack.40";
+GPIO1.gpioPin.$suggestSolution            = "boosterpack.13";
+GPIO2.gpioPin.$suggestSolution            = "boosterpack.12";
+GPIO3.gpioPin.$suggestSolution            = "boosterpack.39";
+GPIO4.gpioPin.$suggestSolution            = "boosterpack.40";
 Timer.rtc.$suggestSolution                = "RTC0";

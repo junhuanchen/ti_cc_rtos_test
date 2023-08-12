@@ -101,6 +101,15 @@ void test_uart_puts(char *str)
     }
 }
 
+void test_uart_print(char *str, size_t len)
+{
+    bytesWritten = 0;
+    while (bytesWritten == 0)
+    {
+        UART2_write(uart_1, str, len, &bytesWritten);
+    }
+}
+
 //void test_uart_printf(const char *format, ...)
 //{
 //    char buf[256];
@@ -109,7 +118,7 @@ void test_uart_puts(char *str)
 //    vsprintf(buf, format, args);
 //    va_end(args);
 //
-//    test_uart_puts(buf, strlen(buf));
+//    test_uart_print(buf, strlen(buf));
 //}
 
 void test_uart_init(void)

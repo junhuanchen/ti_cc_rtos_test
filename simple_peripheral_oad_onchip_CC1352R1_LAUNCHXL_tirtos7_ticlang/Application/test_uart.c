@@ -105,9 +105,6 @@ void test_uart_init(void)
 
 }
 
-#include "sensor.h"
-#include "smsgs.h"
-
 void test_uart_loop(void)
 {
     int status           = UART2_STATUS_SUCCESS;
@@ -129,7 +126,12 @@ void test_uart_loop(void)
         
         if (input == '1')
         {
-            Sensor_sendIdentifyLedRequest();
+            bytesWritten = 0;
+            while (bytesWritten == 0)
+            {
+                status = UART2_write(uart_1, "hello world\r\n", 13, &bytesWritten);
+                GPIO_toggle(CONFIG_GPIO_GLED);
+            }
         }
     }
 

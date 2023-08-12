@@ -101,6 +101,8 @@ Target Device: cc13xx_cc26xx
 #include "oad.h"
 #include <common/cc26xx/flash_interface/flash_interface.h>
 
+#include "apps.h"
+
 /*********************************************************************
 * CONSTANTS
 */
@@ -775,6 +777,8 @@ static void multi_role_init(void)
   // Display Image version
   Display_print1(dispHandle, MR_ROW_SEPARATOR, 0, "== DLS On-chip OAD v%s ==",
                  versionStr);
+
+  apps();
 
   /*
    * When switching from persistent app back to the user application for the
