@@ -9,6 +9,7 @@
 /* Driver configuration */
 #include "ti_drivers_config.h"
 
+#include "ti_ble_config.h"
 #include "simple_peripheral_oad_onchip.h"
 #include "gap_scanner.h"
 
@@ -114,7 +115,7 @@ void test_uart_init(void)
 
 }
 
-void test_uart_loop(void)
+void test_uart_loop()
 {
     int status           = UART2_STATUS_SUCCESS;
 
@@ -143,25 +144,51 @@ void test_uart_loop(void)
             }
         }
 
-        if (input == '1')
+        // test_uart_ble(input);
+
+        if (input == '6')
+        {
+            multi_role_doGattWrite(0);
+            return;
+        }
+
+        // if (input == '5')
+        // {
+        //     attReadReq_t req;
+        //     extern uint16_t mrConnHandle;
+        //     uint8_t connIndex = multi_role_getConnIndex(mrConnHandle);
+
+        //     // connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
+        //     MULTIROLE_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
+
+        //     extern mrConnRec_t connList[MAX_NUM_BLE_CONNS];
+        //     extern ICall_EntityID selfEntity;
+        //     req.handle = connList[connIndex].charHandle;
+        //     GATT_ReadCharValue(mrConnHandle, &req, selfEntity);
+        //     return;
+        // }
+
+        if (input == '4')
         {
             GapScan_enable(0, 100, 15);
             test_uart_puts("Discovering...\r\n");
+            return;
+        }
+
+        if (input == '3')
+        {
+            GapScan_disable();
+            test_uart_puts("Stopped Discovering\r\n");
+            return;
         }
 
         if (input == '2')
         {
-            GapScan_disable();
-            test_uart_puts("Stopped Discovering\r\n");
-        }
-        
-        if (input == '4')
-        {
             GapScan_Evt_AdvRpt_t advRpt;
 
             GapScan_getAdvReport(0, &advRpt);
-            
-            char tmp[64] = {0};
+
+            static tmp[64] = {0};
             sprintf(tmp, "mac: %02x:%02x:%02x:%02x:%02x:%02x\r\n", advRpt.addr[0], advRpt.addr[1], advRpt.addr[2], advRpt.addr[3], advRpt.addr[4], advRpt.addr[5]);
             test_uart_puts(tmp);
 
@@ -169,9 +196,10 @@ void test_uart_loop(void)
 
             // multi_role_doConnUpdate(0);
             // test_uart_puts("Connection Update Request\r\n");
+            return;
         }
-        
-        if (input == '3')
+
+        if (input == '1')
         {
             // Temporarily disable advertising
             extern uint8_t advHandle;
@@ -180,11 +208,11 @@ void test_uart_loop(void)
             // Scanned device information record
             typedef struct
             {
-                uint8_t addrType;         // Peer Device's Address Type
-                uint8_t addr[6]; // Peer Device Address
+            uint8_t addrType; // Peer Device's Address Type
+            uint8_t addr[6];  // Peer Device Address
             } scanRec_t;
 
-            scanRec_t advRpt; // 09:df:00:71:77:60 addrType 0 
+            scanRec_t advRpt; // 09:df:00:71:77:60 addrType 0
             advRpt.addrType = 0;
             advRpt.addr[0] = 0x09;
             advRpt.addr[1] = 0xdf;
@@ -201,7 +229,8 @@ void test_uart_loop(void)
 
             // Re-enable advertising
             GapAdv_enable(advHandle, 0, 0);
-            
+
+            return;
         }
 
     }

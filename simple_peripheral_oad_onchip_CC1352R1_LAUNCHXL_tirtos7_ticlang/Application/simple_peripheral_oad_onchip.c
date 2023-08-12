@@ -394,7 +394,7 @@ static uint8_t charVal = 0;
 static uint8_t numConn = 0;
 
 // Connection handle of current connection
-static uint16_t mrConnHandle = LINKDB_CONNHANDLE_INVALID;
+uint16_t mrConnHandle = LINKDB_CONNHANDLE_INVALID;
 
 // List to store connection handles for set phy command status's
 static List_List setPhyCommStatList;
@@ -3840,12 +3840,69 @@ static void multi_role_processOadResetEvt(oadResetWrite_t *resetEvt)
 void multi_role_processOadResetWriteCB(uint16_t connHandle,
                                       uint16_t bim_var)
 {
-    // Allocate memory for OAD EVT payload, the app task must free this later
-    oadResetWrite_t *oadResetWriteEvt = ICall_malloc(sizeof(oadResetWrite_t));
+  // Allocate memory for OAD EVT payload, the app task must free this later
+  oadResetWrite_t *oadResetWriteEvt = ICall_malloc(sizeof(oadResetWrite_t));
 
-    oadResetWriteEvt->connHandle = connHandle;
-    oadResetWriteEvt->bim_var = bim_var;
+  oadResetWriteEvt->connHandle = connHandle;
+  oadResetWriteEvt->bim_var = bim_var;
 
-    // This function will enqueue the messsage and wake the application
-    multi_role_enqueueMsg(MR_OAD_RESET_EVT, (uint8_t *)oadResetWriteEvt);
+  // This function will enqueue the messsage and wake the application
+  multi_role_enqueueMsg(MR_OAD_RESET_EVT, (uint8_t *)oadResetWriteEvt);
 }
+
+// void test_uart_ble(char input)
+// {
+//   test_uart_puts("test_uart_ble\r\n");
+
+//   if (input == '6')
+//   {
+//     multi_role_doGattWrite(0);
+//     return;
+//   }
+
+//   if (input == '5')
+//   {
+//     attReadReq_t req;
+//     extern uint16_t mrConnHandle;
+//     uint8_t connIndex = multi_role_getConnIndex(mrConnHandle);
+
+//     // connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
+//     MULTIROLE_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
+
+//     req.handle = connList[connIndex].charHandle;
+//     GATT_ReadCharValue(mrConnHandle, &req, selfEntity);
+//     return;
+//   }
+
+//   if (input == '4')
+//   {
+//     GapScan_enable(0, 100, 15);
+//     test_uart_puts("Discovering...\r\n");
+//     return;
+//   }
+
+//   if (input == '3')
+//   {
+//     GapScan_disable();
+//     test_uart_puts("Stopped Discovering\r\n");
+//     return;
+//   }
+
+//   if (input == '2')
+//   {
+//     GapScan_Evt_AdvRpt_t advRpt;
+
+//     GapScan_getAdvReport(0, &advRpt);
+
+//     static tmp[64] = {0};
+//     sprintf(tmp, "mac: %02x:%02x:%02x:%02x:%02x:%02x\r\n", advRpt.addr[0], advRpt.addr[1], advRpt.addr[2], advRpt.addr[3], advRpt.addr[4], advRpt.addr[5]);
+//     test_uart_puts(tmp);
+
+//     GapInit_connect(advRpt.addrType & 0x01, advRpt.addr, 0x01, 0);
+
+//     // multi_role_doConnUpdate(0);
+//     // test_uart_puts("Connection Update Request\r\n");
+//     return;
+//   }
+
+// }

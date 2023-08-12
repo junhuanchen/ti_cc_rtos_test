@@ -123,6 +123,7 @@ bool multi_role_doSetInitPhy(uint8_t index);
 /* Action for Menu: Set Connection PHY */
 bool multi_role_doConnPhy(uint8_t index);
 
+// void test_uart_ble(char input);
 
 /*********************************************************************
 *********************************************************************/
