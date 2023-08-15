@@ -735,15 +735,15 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
 
       uint8_t connIndex = multi_role_getConnIndex(mrConnHandle);
 
-      req.pValue = GATT_bm_alloc(mrConnHandle, ATT_WRITE_REQ, 1, NULL);
+      req.pValue = GATT_bm_alloc(mrConnHandle, ATT_WRITE_REQ, 20, NULL);
 
       if ( req.pValue != NULL )
       {
           req.handle = connList[connIndex].charHandle;
-          
-          req.len = 1;
+          memset(req.pValue, 0, 20);
+          req.len = 20;
           charVal = charVals[test_ble_flag - 2];
-          req.pValue[0] = charVal;
+          req.pValue[rand() % 20] = charVal;
           req.sig = 0;
           req.cmd = 0;
 
@@ -1569,8 +1569,10 @@ static uint8_t multi_role_processGATTMsg(gattMsgEvent_t *pMsg)
       {
         // After a successful read, display the read value
         Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Read rsp: %d", pMsg->msg.readRsp.pValue[0]);
-        SimpleProfile_SetParameter(SIMPLEPROFILE_CHAR1, sizeof(uint8_t),
-                                  &pMsg->msg.readRsp.pValue[0]);
+        // SimpleProfile_SetParameter(SIMPLEPROFILE_CHAR, sizeof(uint8_t),
+        //                           &pMsg->msg.readRsp.pValue[0]);
+        SimpleProfile_SetParameter(SIMPLEPROFILE_CHAR6, pMsg->msg.readRsp.len,
+                                   pMsg->msg.readRsp.pValue);
       }
 
     }
@@ -2402,8 +2404,8 @@ static void multi_role_processGATTDiscEvent(gattMsgEvent_t *pMsg)
         req.startHandle = svcStartHdl;
         req.endHandle = svcEndHdl;
         req.type.len = ATT_BT_UUID_SIZE;
-        req.type.uuid[0] = LO_UINT16(SIMPLEPROFILE_CHAR1_UUID);
-        req.type.uuid[1] = HI_UINT16(SIMPLEPROFILE_CHAR1_UUID);
+        req.type.uuid[0] = LO_UINT16(SIMPLEPROFILE_CHAR6_UUID);
+        req.type.uuid[1] = HI_UINT16(SIMPLEPROFILE_CHAR6_UUID);
 
         VOID GATT_DiscCharsByUUID(pMsg->connHandle, &req, selfEntity);
       }
