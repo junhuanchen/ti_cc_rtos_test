@@ -9,10 +9,7 @@
 /* Driver configuration */
 #include "ti_drivers_config.h"
 
-#include "ti_ble_config.h"
 #include "simple_peripheral_oad_onchip.h"
-#include "gap_scanner.h"
-
 /*
  * The following function is from good old K & R.
  */
@@ -54,7 +51,7 @@
 // }
 
 char input;
-char tempStr[256] = "\r\nhello world\r\n";
+char tempStr[64] = "\r\nhello world\r\n";
 UART2_Handle uart_0;
 UART2_Handle uart_1;
 UART2_Params uartParams_0;
@@ -117,6 +114,11 @@ void test_uart_init(void)
 
 void test_uart_loop()
 {
+
+    extern mrConnRec_t connList[MAX_NUM_BLE_CONNS];
+    extern ICall_EntityID selfEntity;
+    extern uint16_t mrConnHandle;
+
     int status           = UART2_STATUS_SUCCESS;
 
     bytesRead = 0;
@@ -144,29 +146,75 @@ void test_uart_loop()
             }
         }
 
-        // test_uart_ble(input);
-
-        if (input == '6')
+        extern uint8_t charVal;
+        
+        if (input == '0')
         {
-            multi_role_doGattWrite(0);
+            // view charVal
+            bytesWritten = 0;
+            while (bytesWritten == 0)
+            {
+                sprintf(tempStr, "\r\ncharVal:%d\r\n", (int)charVal);
+                status = UART2_write(uart_1, tempStr, strlen(tempStr), &bytesWritten);
+                GPIO_toggle(CONFIG_GPIO_GLED);
+            }
+
+
+            // Loop through connection
+            for (int i = 0; i < MAX_NUM_BLE_CONNS; i++)
+            {
+                test_uart_puts("connHandle:");
+                sprintf(tempStr, "%d", (int)connList[i].connHandle);
+                test_uart_puts(tempStr);
+            }
+        }
+
+        if (input == '8')
+        {
+            uint8_t connIndex = multi_role_getConnIndex(mrConnHandle);
+            // connList[connIndex].discState == BLE_DISC_STATE_CHAR
+            test_uart_puts("connHandle:");
+            sprintf(tempStr, "%d", (int)connList[connIndex].connHandle);
+            test_uart_puts(tempStr);
+            // discExist
+            test_uart_puts("discExist:");
+            sprintf(tempStr, "%d", (int)connList[connIndex].discExist);
+            test_uart_puts(tempStr);
             return;
         }
 
-        // if (input == '5')
-        // {
-        //     attReadReq_t req;
-        //     extern uint16_t mrConnHandle;
-        //     uint8_t connIndex = multi_role_getConnIndex(mrConnHandle);
+        if (input == '7')
+        {
+            uint8_t connIndex = multi_role_getConnIndex(0);
+            mrConnHandle = connList[connIndex].connHandle;
 
-        //     // connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
-        //     MULTIROLE_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
+            if (connList[connIndex].charHandle == 0)
+            {
+                #define MR_EVT_SVC_DISC            6
+                
+                // Initiate service discovery
+                multi_role_enqueueMsg(MR_EVT_SVC_DISC, NULL);
+            }
 
-        //     extern mrConnRec_t connList[MAX_NUM_BLE_CONNS];
-        //     extern ICall_EntityID selfEntity;
-        //     req.handle = connList[connIndex].charHandle;
-        //     GATT_ReadCharValue(mrConnHandle, &req, selfEntity);
-        //     return;
-        // }
+            test_uart_puts("connHandle:");
+            sprintf(tempStr, "%d", (int)connList[connIndex].connHandle);
+            test_uart_puts(tempStr);
+            return;
+        }
+
+        if (input == '6')
+        {
+            extern int test_ble_flag;
+            test_ble_flag = rand() % 3 + 2;
+            return;
+        }
+
+        if (input == '5')
+        {
+            extern int test_ble_flag;
+            test_ble_flag = 1;
+            return;
+        }
 
         if (input == '4')
         {

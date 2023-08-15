@@ -123,10 +123,134 @@ bool multi_role_doSetInitPhy(uint8_t index);
 /* Action for Menu: Set Connection PHY */
 bool multi_role_doConnPhy(uint8_t index);
 
-// void test_uart_ble(char input);
+uint16_t multi_role_getConnIndex(uint16_t connHandle);
 
 /*********************************************************************
 *********************************************************************/
+
+#include "ti_ble_config.h"
+#include "gap_scanner.h"
+#include "util.h"
+#include "att.h"
+#include "gatt.h"
+
+// Discovery states
+typedef enum {
+  BLE_DISC_STATE_IDLE,                // Idle
+  BLE_DISC_STATE_MTU,                 // Exchange ATT MTU size
+  BLE_DISC_STATE_SVC,                 // Service discovery
+  BLE_DISC_STATE_CHAR                 // Characteristic discovery
+} discState_t;
+
+// Row numbers for two-button menu
+#define MR_ROW_SEPARATOR     (TBM_ROW_APP + 0)
+#define MR_ROW_CUR_CONN      (TBM_ROW_APP + 1)
+#define MR_ROW_ANY_CONN      (TBM_ROW_APP + 2)
+#define MR_ROW_NON_CONN      (TBM_ROW_APP + 3)
+#define MR_ROW_NUM_CONN      (TBM_ROW_APP + 4)
+#define MR_ROW_CHARSTAT      (TBM_ROW_APP + 5)
+#define MR_ROW_ADVERTIS      (TBM_ROW_APP + 6)
+#define MR_ROW_MYADDRSS      (TBM_ROW_APP + 7)
+#define MR_ROW_SECURITY      (TBM_ROW_APP + 8)
+#define MR_ROW_RPA           (TBM_ROW_APP + 9)
+
+#define CONNINDEX_INVALID  0xFF
+
+// For storing the active connections
+#define MR_RSSI_TRACK_CHNLS        1            // Max possible channels can be GAP_BONDINGS_MAX
+#define MR_MAX_RSSI_STORE_DEPTH    5
+#define MR_INVALID_HANDLE          0xFFFF
+#define RSSI_2M_THRSHLD           -30           // -80 dB rssi
+#define RSSI_1M_THRSHLD           -40           // -90 dB rssi
+#define RSSI_S2_THRSHLD           -50           // -100 dB rssi
+#define RSSI_S8_THRSHLD           -60           // -120 dB rssi
+#define MR_PHY_NONE                LL_PHY_NONE  // No PHY set
+#define AUTO_PHY_UPDATE            0xFF
+
+/*********************************************************************
+* TYPEDEFS
+*/
+
+// App event passed from profiles.
+typedef struct
+{
+  uint8_t event;    // event type
+  void *pData;   // event data pointer
+} mrEvt_t;
+
+// Container to store paring state info when passing from gapbondmgr callback
+// to app event. See the pfnPairStateCB_t documentation from the gapbondmgr.h
+// header file for more information on each parameter.
+typedef struct
+{
+  uint8_t state;
+  uint16_t connHandle;
+  uint8_t status;
+} mrPairStateData_t;
+
+// Container to store passcode data when passing from gapbondmgr callback
+// to app event. See the pfnPasscodeCB_t documentation from the gapbondmgr.h
+// header file for more information on each parameter.
+typedef struct
+{
+  uint8_t deviceAddr[B_ADDR_LEN];
+  uint16_t connHandle;
+  uint8_t uiInputs;
+  uint8_t uiOutputs;
+  uint32_t numComparison;
+} mrPasscodeData_t;
+
+// Scanned device information record
+typedef struct
+{
+  uint8_t addrType;         // Peer Device's Address Type
+  uint8_t addr[B_ADDR_LEN]; // Peer Device Address
+} scanRec_t;
+
+// Container to store information from clock expiration using a flexible array
+// since data is not always needed
+typedef struct
+{
+  uint8_t event;
+  uint8_t data[];
+} mrClockEventData_t;
+
+// Container to store advertising event data when passing from advertising
+// callback to app event. See the respective event in GapAdvScan_Event_IDs
+// in gap_advertiser.h for the type that pBuf should be cast to.
+typedef struct
+{
+  uint32_t event;
+  void *pBuf;
+} mrGapAdvEventData_t;
+
+// List element for parameter update and PHY command status lists
+typedef struct
+{
+  List_Elem elem;
+  uint16_t  connHandle;
+} mrConnHandleEntry_t;
+
+// Connected device information
+typedef struct
+{
+  uint16_t              connHandle;           // Connection Handle
+  mrClockEventData_t*   pParamUpdateEventData;// pointer to paramUpdateEventData
+  uint16_t              charHandle;           // Characteristic Handle
+  uint8_t               addr[B_ADDR_LEN];     // Peer Device Address
+  Clock_Struct*         pUpdateClock;         // pointer to clock struct
+  uint8_t               discState;            // Per connection deiscovery state
+  uint8_t               discExist;            // Per connection deiscovery state
+  int8_t                rssiArr[MR_MAX_RSSI_STORE_DEPTH];
+  uint8_t               rssiCntr;
+  int8_t                rssiAvg;
+  bool                  phyCngRq;                          // Set to true if PHY change request is in progress
+  uint8_t               currPhy;
+  uint8_t               rqPhy;
+  uint8_t               phyRqFailCnt;                      // PHY change request count
+  bool                  isAutoPHYEnable;                   // Flag to indicate auto phy change
+
+} mrConnRec_t;
 
 #ifdef __cplusplus
 }

@@ -22,13 +22,14 @@
 extern void *mainThread(void *arg0);
 
 /* Stack size in bytes */
-#define THREADSTACKSIZE 1024
+#define THREADSTACKSIZE 4096
 
 /*
  *  ======== main ========
  */
 int apps(void)
 {
+    // return ;
     pthread_t thread;
     pthread_attr_t attrs;
     struct sched_param priParam;

@@ -16,4 +16,5 @@
 	<templateProperties value="id=simple_peripheral_oad_onchip_CC1352R1_LAUNCHXL_tirtos7_ticlang.projectspec.simple_peripheral_oad_onchip_CC1352R1_LAUNCHXL_tirtos7_ticlang,buildProfile=release,isHybrid=true"/>
 	<origin value="/home/juwan/ti/simplelink_cc13xx_cc26xx_sdk_7_10_01_24/examples/rtos/CC1352R1_LAUNCHXL/ble5stack/simple_peripheral_oad_onchip/tirtos7/ticlang/simple_peripheral_oad_onchip_CC1352R1_LAUNCHXL_tirtos7_ticlang.projectspec"/>
 	<filesToOpen value=""/>
+	<isTargetManual value="false"/>
 </projectOptions>

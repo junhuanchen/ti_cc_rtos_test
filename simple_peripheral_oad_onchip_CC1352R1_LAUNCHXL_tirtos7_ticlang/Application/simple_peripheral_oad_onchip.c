@@ -161,125 +161,8 @@ Target Device: cc13xx_cc26xx
 // Supervision timeout conversion rate to miliseconds
 #define CONN_TIMEOUT_MS_CONVERSION            10
 
-// Discovery states
-typedef enum {
-  BLE_DISC_STATE_IDLE,                // Idle
-  BLE_DISC_STATE_MTU,                 // Exchange ATT MTU size
-  BLE_DISC_STATE_SVC,                 // Service discovery
-  BLE_DISC_STATE_CHAR                 // Characteristic discovery
-} discState_t;
-
-// Row numbers for two-button menu
-#define MR_ROW_SEPARATOR     (TBM_ROW_APP + 0)
-#define MR_ROW_CUR_CONN      (TBM_ROW_APP + 1)
-#define MR_ROW_ANY_CONN      (TBM_ROW_APP + 2)
-#define MR_ROW_NON_CONN      (TBM_ROW_APP + 3)
-#define MR_ROW_NUM_CONN      (TBM_ROW_APP + 4)
-#define MR_ROW_CHARSTAT      (TBM_ROW_APP + 5)
-#define MR_ROW_ADVERTIS      (TBM_ROW_APP + 6)
-#define MR_ROW_MYADDRSS      (TBM_ROW_APP + 7)
-#define MR_ROW_SECURITY      (TBM_ROW_APP + 8)
-#define MR_ROW_RPA           (TBM_ROW_APP + 9)
-
-#define CONNINDEX_INVALID  0xFF
-
-// For storing the active connections
-#define MR_RSSI_TRACK_CHNLS        1            // Max possible channels can be GAP_BONDINGS_MAX
-#define MR_MAX_RSSI_STORE_DEPTH    5
-#define MR_INVALID_HANDLE          0xFFFF
-#define RSSI_2M_THRSHLD           -30           // -80 dB rssi
-#define RSSI_1M_THRSHLD           -40           // -90 dB rssi
-#define RSSI_S2_THRSHLD           -50           // -100 dB rssi
-#define RSSI_S8_THRSHLD           -60           // -120 dB rssi
-#define MR_PHY_NONE                LL_PHY_NONE  // No PHY set
-#define AUTO_PHY_UPDATE            0xFF
-
 // Spin if the expression is not true
 #define MULTIROLE_ASSERT(expr) if (!(expr)) multi_role_spin();
-
-/*********************************************************************
-* TYPEDEFS
-*/
-
-// App event passed from profiles.
-typedef struct
-{
-  uint8_t event;    // event type
-  void *pData;   // event data pointer
-} mrEvt_t;
-
-// Container to store paring state info when passing from gapbondmgr callback
-// to app event. See the pfnPairStateCB_t documentation from the gapbondmgr.h
-// header file for more information on each parameter.
-typedef struct
-{
-  uint8_t state;
-  uint16_t connHandle;
-  uint8_t status;
-} mrPairStateData_t;
-
-// Container to store passcode data when passing from gapbondmgr callback
-// to app event. See the pfnPasscodeCB_t documentation from the gapbondmgr.h
-// header file for more information on each parameter.
-typedef struct
-{
-  uint8_t deviceAddr[B_ADDR_LEN];
-  uint16_t connHandle;
-  uint8_t uiInputs;
-  uint8_t uiOutputs;
-  uint32_t numComparison;
-} mrPasscodeData_t;
-
-// Scanned device information record
-typedef struct
-{
-  uint8_t addrType;         // Peer Device's Address Type
-  uint8_t addr[B_ADDR_LEN]; // Peer Device Address
-} scanRec_t;
-
-// Container to store information from clock expiration using a flexible array
-// since data is not always needed
-typedef struct
-{
-  uint8_t event;
-  uint8_t data[];
-} mrClockEventData_t;
-
-// Container to store advertising event data when passing from advertising
-// callback to app event. See the respective event in GapAdvScan_Event_IDs
-// in gap_advertiser.h for the type that pBuf should be cast to.
-typedef struct
-{
-  uint32_t event;
-  void *pBuf;
-} mrGapAdvEventData_t;
-
-// List element for parameter update and PHY command status lists
-typedef struct
-{
-  List_Elem elem;
-  uint16_t  connHandle;
-} mrConnHandleEntry_t;
-
-// Connected device information
-typedef struct
-{
-  uint16_t              connHandle;           // Connection Handle
-  mrClockEventData_t*   pParamUpdateEventData;// pointer to paramUpdateEventData
-  uint16_t              charHandle;           // Characteristic Handle
-  uint8_t               addr[B_ADDR_LEN];     // Peer Device Address
-  Clock_Struct*         pUpdateClock;         // pointer to clock struct
-  uint8_t               discState;            // Per connection deiscovery state
-  int8_t                rssiArr[MR_MAX_RSSI_STORE_DEPTH];
-  uint8_t               rssiCntr;
-  int8_t                rssiAvg;
-  bool                  phyCngRq;                          // Set to true if PHY change request is in progress
-  uint8_t               currPhy;
-  uint8_t               rqPhy;
-  uint8_t               phyRqFailCnt;                      // PHY change request count
-  bool                  isAutoPHYEnable;                   // Flag to indicate auto phy change
-
-} mrConnRec_t;
 
 /*********************************************************************
 * GLOBAL VARIABLES
@@ -318,7 +201,7 @@ uint16_t resetConnHandle = LINKDB_CONNHANDLE_INVALID;
 */
 
 // Entity ID globally used to check for source and/or destination of messages
-static ICall_EntityID selfEntity;
+ICall_EntityID selfEntity;
 
 // Event globally used to post local events and pend on system and
 // local events.
@@ -388,10 +271,10 @@ static uint16_t svcStartHdl = 0;
 static uint16_t svcEndHdl = 0;
 
 // Value to write
-static uint8_t charVal = 0;
+uint8_t charVal = 0;
 
 // Number of connected devices
-static uint8_t numConn = 0;
+uint8_t numConn = 0;
 
 // Connection handle of current connection
 uint16_t mrConnHandle = LINKDB_CONNHANDLE_INVALID;
@@ -403,7 +286,7 @@ static List_List setPhyCommStatList;
 static List_List paramUpdateList;
 
 // Per-handle connection info
-static mrConnRec_t connList[MAX_NUM_BLE_CONNS];
+mrConnRec_t connList[MAX_NUM_BLE_CONNS];
 
 // Variable used to store the number of messages pending once OAD completes
 // The application cannot reboot until all pending messages are sent
@@ -452,9 +335,9 @@ static void multi_role_processParamUpdate(uint16_t connHandle);
 static void multi_role_processAdvEvent(mrGapAdvEventData_t *pEventData);
 
 static void multi_role_charValueChangeCB(uint8_t paramID);
-static status_t multi_role_enqueueMsg(uint8_t event, void *pData);
+status_t multi_role_enqueueMsg(uint8_t event, void *pData);
 static void multi_role_handleKeys(uint8_t keys);
-static uint16_t multi_role_getConnIndex(uint16_t connHandle);
+uint16_t multi_role_getConnIndex(uint16_t connHandle);
 static void multi_role_keyChangeHandler(uint8_t keys);
 static uint8_t multi_role_addConnInfo(uint16_t connHandle, uint8_t *pAddr,
                                       uint8_t role);
@@ -804,6 +687,8 @@ static void multi_role_init(void)
 
 }
 
+int test_ble_flag = 0;
+
 /*********************************************************************
 * @fn      multi_role_taskFxn
 *
@@ -825,6 +710,55 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
   // Application main loop
   for (;;)
   {
+    if (test_ble_flag == 1)
+    {
+      attReadReq_t req;
+      uint8_t connIndex = multi_role_getConnIndex(mrConnHandle);
+
+      // connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
+      MULTIROLE_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
+
+      req.handle = connList[connIndex].charHandle;
+      GATT_ReadCharValue(mrConnHandle, &req, selfEntity);
+      
+      test_uart_puts("read char value\n");
+      
+      test_ble_flag = 0;
+    }
+
+    if (test_ble_flag > 1)
+    {
+      status_t status;
+      uint8_t charVals[4] = { 0x11, 0x22, 0x33, 0x44 }; // Should be consistent with
+                                                          // those in scMenuGattWrite
+      attWriteReq_t req;
+
+      uint8_t connIndex = multi_role_getConnIndex(mrConnHandle);
+
+      req.pValue = GATT_bm_alloc(mrConnHandle, ATT_WRITE_REQ, 1, NULL);
+
+      if ( req.pValue != NULL )
+      {
+          req.handle = connList[connIndex].charHandle;
+          
+          req.len = 1;
+          charVal = charVals[test_ble_flag - 2];
+          req.pValue[0] = charVal;
+          req.sig = 0;
+          req.cmd = 0;
+
+          status = GATT_WriteCharValue(mrConnHandle, &req, selfEntity);
+          if ( status != SUCCESS )
+          {
+              GATT_bm_free((gattMsg_t *)&req, ATT_WRITE_REQ);
+          }
+
+          test_uart_puts("write char value\n");
+      }
+
+      test_ble_flag = 0;
+    }
+
     uint32_t events;
 
     // Waits for an event to be posted associated with the calling thread.
@@ -1635,6 +1569,8 @@ static uint8_t multi_role_processGATTMsg(gattMsgEvent_t *pMsg)
       {
         // After a successful read, display the read value
         Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Read rsp: %d", pMsg->msg.readRsp.pValue[0]);
+        SimpleProfile_SetParameter(SIMPLEPROFILE_CHAR1, sizeof(uint8_t),
+                                  &pMsg->msg.readRsp.pValue[0]);
       }
 
     }
@@ -2198,7 +2134,7 @@ static void multi_role_charValueChangeCB(uint8_t paramID)
  *
  * @return  TRUE or FALSE
  */
-static status_t multi_role_enqueueMsg(uint8_t event, void *pData)
+status_t multi_role_enqueueMsg(uint8_t event, void *pData)
 {
   uint8_t success;
   mrEvt_t *pMsg = ICall_malloc(sizeof(mrEvt_t));
@@ -2490,13 +2426,14 @@ static void multi_role_processGATTDiscEvent(gattMsgEvent_t *pMsg)
                        pMsg->msg.readByTypeRsp.pDataList[4]);
 
       Display_printf(dispHandle, MR_ROW_CUR_CONN, 0, "Simple Svc Found");
-
+      
       // Now we can use GATT Read/Write
       tbm_setItemStatus(&mrMenuPerConn,
                         MR_ITEM_GATTREAD | MR_ITEM_GATTWRITE, MR_ITEM_NONE);
     }
 
     connList[connIndex].discState = BLE_DISC_STATE_IDLE;
+    connList[connIndex].discExist = 1;
   }
 }
 
@@ -2510,7 +2447,7 @@ static void multi_role_processGATTDiscEvent(gattMsgEvent_t *pMsg)
  * @return  the index of the entry that has the given connection handle.
  *          if there is no match, MAX_NUM_BLE_CONNS will be returned.
 */
-static uint16_t multi_role_getConnIndex(uint16_t connHandle)
+uint16_t multi_role_getConnIndex(uint16_t connHandle)
 {
   uint8_t i;
   // Loop through connection
@@ -3849,60 +3786,3 @@ void multi_role_processOadResetWriteCB(uint16_t connHandle,
   // This function will enqueue the messsage and wake the application
   multi_role_enqueueMsg(MR_OAD_RESET_EVT, (uint8_t *)oadResetWriteEvt);
 }
-
-// void test_uart_ble(char input)
-// {
-//   test_uart_puts("test_uart_ble\r\n");
-
-//   if (input == '6')
-//   {
-//     multi_role_doGattWrite(0);
-//     return;
-//   }
-
-//   if (input == '5')
-//   {
-//     attReadReq_t req;
-//     extern uint16_t mrConnHandle;
-//     uint8_t connIndex = multi_role_getConnIndex(mrConnHandle);
-
-//     // connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
-//     MULTIROLE_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
-
-//     req.handle = connList[connIndex].charHandle;
-//     GATT_ReadCharValue(mrConnHandle, &req, selfEntity);
-//     return;
-//   }
-
-//   if (input == '4')
-//   {
-//     GapScan_enable(0, 100, 15);
-//     test_uart_puts("Discovering...\r\n");
-//     return;
-//   }
-
-//   if (input == '3')
-//   {
-//     GapScan_disable();
-//     test_uart_puts("Stopped Discovering\r\n");
-//     return;
-//   }
-
-//   if (input == '2')
-//   {
-//     GapScan_Evt_AdvRpt_t advRpt;
-
-//     GapScan_getAdvReport(0, &advRpt);
-
-//     static tmp[64] = {0};
-//     sprintf(tmp, "mac: %02x:%02x:%02x:%02x:%02x:%02x\r\n", advRpt.addr[0], advRpt.addr[1], advRpt.addr[2], advRpt.addr[3], advRpt.addr[4], advRpt.addr[5]);
-//     test_uart_puts(tmp);
-
-//     GapInit_connect(advRpt.addrType & 0x01, advRpt.addr, 0x01, 0);
-
-//     // multi_role_doConnUpdate(0);
-//     // test_uart_puts("Connection Update Request\r\n");
-//     return;
-//   }
-
-// }
