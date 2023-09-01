@@ -710,6 +710,9 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
   // Application main loop
   for (;;)
   {
+    // 这里可以做一个状态机的队列用于业务逻辑，将所有操作链接到这个文件
+    // 串口或蓝牙数据缓冲区只用于接收状态机事件以及清除数据，供外部调用
+
     if (test_ble_flag == 1)
     {
       attReadReq_t req;

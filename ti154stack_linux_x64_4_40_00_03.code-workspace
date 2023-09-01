@@ -2,6 +2,12 @@
 	"folders": [
 		{
 			"path": "../ti/ti154stack_linux_x64_4_40_00_03"
+		},
+		{
+			"path": "."
+		},
+		{
+			"path": "../ti/simplelink_cc13xx_cc26xx_sdk_7_10_01_24"
 		}
 	],
 	"settings": {}
