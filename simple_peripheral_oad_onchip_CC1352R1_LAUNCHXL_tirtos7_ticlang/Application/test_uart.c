@@ -159,6 +159,12 @@ void test_uart_loop()
                 GPIO_toggle(CONFIG_GPIO_GLED);
             }
 
+            char multi_role_tmpbuf[20] = { 0 };
+            #define SIMPLEPROFILE_CHAR6                   5  // RW uint8 - Profile Characteristic 4 value
+            SimpleProfile_GetParameter(SIMPLEPROFILE_CHAR6, multi_role_tmpbuf);
+            // view multi_role_tmpbuf
+            sprintf(tempStr, "\r\nmulti_role_tmpbuf:%.*s\r\n", 20, multi_role_tmpbuf);
+            test_uart_puts(tempStr);
 
             // Loop through connection
             for (int i = 0; i < MAX_NUM_BLE_CONNS; i++)
@@ -176,7 +182,7 @@ void test_uart_loop()
             test_uart_puts("connHandle:");
             sprintf(tempStr, "%d", (int)connList[connIndex].connHandle);
             test_uart_puts(tempStr);
-            // discExist
+            // discExist == 1
             test_uart_puts("discExist:");
             sprintf(tempStr, "%d", (int)connList[connIndex].discExist);
             test_uart_puts(tempStr);
@@ -216,36 +222,36 @@ void test_uart_loop()
             return;
         }
 
-        if (input == '4')
-        {
-            GapScan_enable(0, 100, 15);
-            test_uart_puts("Discovering...\r\n");
-            return;
-        }
+        // if (input == '4')
+        // {
+        //     GapScan_enable(0, 100, 15);
+        //     test_uart_puts("Discovering...\r\n");
+        //     return;
+        // }
 
-        if (input == '3')
-        {
-            GapScan_disable();
-            test_uart_puts("Stopped Discovering\r\n");
-            return;
-        }
+        // if (input == '3')
+        // {
+        //     GapScan_disable();
+        //     test_uart_puts("Stopped Discovering\r\n");
+        //     return;
+        // }
 
-        if (input == '2')
-        {
-            GapScan_Evt_AdvRpt_t advRpt;
+        // if (input == '2')
+        // {
+        //     GapScan_Evt_AdvRpt_t advRpt;
 
-            GapScan_getAdvReport(0, &advRpt);
+        //     GapScan_getAdvReport(0, &advRpt);
 
-            static tmp[64] = {0};
-            sprintf(tmp, "mac: %02x:%02x:%02x:%02x:%02x:%02x\r\n", advRpt.addr[0], advRpt.addr[1], advRpt.addr[2], advRpt.addr[3], advRpt.addr[4], advRpt.addr[5]);
-            test_uart_puts(tmp);
+        //     static tmp[64] = {0};
+        //     sprintf(tmp, "mac: %02x:%02x:%02x:%02x:%02x:%02x\r\n", advRpt.addr[0], advRpt.addr[1], advRpt.addr[2], advRpt.addr[3], advRpt.addr[4], advRpt.addr[5]);
+        //     test_uart_puts(tmp);
 
-            GapInit_connect(advRpt.addrType & 0x01, advRpt.addr, 0x01, 0);
+        //     GapInit_connect(advRpt.addrType & 0x01, advRpt.addr, 0x01, 0);
 
-            // multi_role_doConnUpdate(0);
-            // test_uart_puts("Connection Update Request\r\n");
-            return;
-        }
+        //     // multi_role_doConnUpdate(0);
+        //     // test_uart_puts("Connection Update Request\r\n");
+        //     return;
+        // }
 
         if (input == '1')
         {

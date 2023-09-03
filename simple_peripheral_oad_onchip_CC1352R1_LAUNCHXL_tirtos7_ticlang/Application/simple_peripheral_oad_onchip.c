@@ -732,7 +732,7 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
     if (test_ble_flag > 1)
     {
       status_t status;
-      uint8_t charVals[4] = { 0x11, 0x22, 0x33, 0x44 }; // Should be consistent with
+      uint8_t charVals[4] = { 0x33, 0x34, 0x35, 0x36 }; // Should be consistent with
                                                           // those in scMenuGattWrite
       attWriteReq_t req;
 
@@ -746,7 +746,11 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
           memset(req.pValue, 0, 20);
           req.len = 20;
           charVal = charVals[test_ble_flag - 2];
-          req.pValue[rand() % 20] = charVal;
+          // req.pValue[rand() % 20] = charVal;
+          for (int i = 0; i < 20; i++)
+          {
+            req.pValue[i] = charVal;
+          }
           req.sig = 0;
           req.cmd = 0;
 
